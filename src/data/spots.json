@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Old Town Square, Prague",
+    "lat": 50.0875,
+    "lng": 14.4213,
+    "panoId": "2612040462587785",
+    "years": [
+      2023,
+      2024,
+      2025
+    ]
+  },
+  {
+    "name": "Senso-ji, Asakusa, Tokyo",
+    "lat": 35.7147,
+    "lng": 139.7966,
+    "panoId": "1934376543844287",
+    "years": [
+      2022,
+      2023,
+      2026
+    ]
+  },
+  {
+    "name": "Pike Place Market, Seattle",
+    "lat": 47.6097,
+    "lng": -122.3425,
+    "panoId": "1337467428549158",
+    "years": [
+      2024,
+      2025,
+      2026
+    ]
+  }
+]
