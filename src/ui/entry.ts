@@ -13,12 +13,6 @@ import {
 } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
 
-/**
- * DEV-only demo driver used to produce screenshots. Keep false when finishing.
- * When true, entry.ts feeds fixture events on a timeline (see runDemo).
- */
-const DEMO = true;
-
 const ASSET_IDS: Record<HudSlot, string> = {
   time: 'hud-time-button',
   year: 'hud-year-label',
@@ -264,8 +258,6 @@ export const createTrack: TrackFactory = async (ctx) => {
   refreshHud();
   recentre();
   scheduleRecentre(300); // the camera pose is only trustworthy after the first frame
-
-  if (import.meta.env.DEV && DEMO) void import('./demo.js').then((m) => m.runDemo(ctx));
 
   const track: Track & { recentre: () => void } = {
     name: 'ui',
