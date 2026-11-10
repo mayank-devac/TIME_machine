@@ -211,7 +211,7 @@ export class MapillaryClient implements PanoSource {
       let all = first.panos;
       if (first.raw >= SEARCH_LIMIT) {
         // Saturated: paging does not work, so ask once per year band.
-        const thisYear = new Date(this.now()).getUTCFullYear();
+        const thisYear = new Date().getUTCFullYear();
         const bands: Pano[] = [];
         for (let y = FIRST_YEAR; y <= thisYear; y++) {
           const r = await this.search({

@@ -180,7 +180,7 @@ describe('throttling', () => {
   });
 
   it('de-duplicates identical in-flight requests', async () => {
-    const { client, fetchImpl } = setup(() => ({ data: [raw(1, 2022, 5)] }));
+    const { client, fetchImpl } = setup(() => raw(5, 2022, 5));
     const [a, b] = await Promise.all([client.resolve('5'), client.resolve('5')]);
     expect(a).toBe(b);
     expect(fetchImpl).toHaveBeenCalledTimes(1);

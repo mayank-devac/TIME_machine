@@ -60,6 +60,58 @@ const CANDIDATES = [
   ['Piazza del Duomo, Milan', 45.4642, 9.1916],
   ['Plaza Mayor, Madrid', 40.4155, -3.7074],
   ['Union Square, San Francisco', 37.7879, -122.4074],
+  ['Dundas Square, Toronto', 43.6561, -79.3802],
+  ['Place Jacques-Cartier, Montreal', 45.5081, -73.5524],
+  ['Unter den Linden, Berlin', 52.517, 13.3889],
+  ['Alexanderplatz, Berlin', 52.5219, 13.4132],
+  ['Karlsplatz, Vienna', 48.2005, 16.3714],
+  ['Piazza Navona, Rome', 41.8992, 12.4731],
+  ['Ponte Vecchio, Florence', 43.768, 11.2531],
+  ['Plaza de Espana, Seville', 37.3772, -5.9869],
+  ['Rossio Square, Lisbon', 38.7139, -9.1394],
+  ['Temple Bar, Dublin', 53.3455, -6.2644],
+  ['Royal Mile, Edinburgh', 55.9502, -3.1875],
+  ['Rynek, Wroclaw', 51.11, 17.0326],
+  ['Vaclavske namesti, Prague', 50.081, 14.4264],
+  ['Helsinki Senate Square', 60.1698, 24.9522],
+  ['Dotonbori, Osaka', 34.6687, 135.5013],
+  ['Kiyomizu-dera approach, Kyoto', 34.9949, 135.785],
+  ['Hongdae, Seoul', 37.5563, 126.9236],
+  ['Hanoi Old Quarter', 21.034, 105.851],
+  ['Jemaa el-Fnaa, Marrakech', 31.6258, -7.9891],
+  ['Mission District, San Francisco', 37.7599, -122.4148],
+  ['Jackson Square, New Orleans', 29.9574, -90.0629],
+  ['Faneuil Hall, Boston', 42.36, -71.0568],
+  ['Lincoln Road, Miami Beach', 25.7906, -80.1401],
+  ['Congress Avenue, Austin', 30.2672, -97.7431],
+  ['Gastown, Vancouver', 49.2837, -123.1088],
+  ['Bondi Beach, Sydney', -33.8908, 151.2743],
+  ['Kennedy Park, Miraflores, Lima', -12.1219, -77.0297],
+  ['Plaza de Mayo, Buenos Aires', -34.6083, -58.3712],
+  ['Union Station, Washington DC', 38.8977, -77.0063],
+  ['Lincoln Memorial, Washington DC', 38.8893, -77.0502],
+  ['Harvard Square, Cambridge', 42.3736, -71.1190],
+  ['Pennsylvania Avenue, Washington DC', 38.8951, -77.0364],
+  ['Millennium Park, Chicago', 41.8826, -87.6226],
+  ['Navy Pier, Chicago', 41.8917, -87.6039],
+  ['Broadway, Nashville', 36.1612, -86.7775],
+  ['Peachtree Street, Atlanta', 33.7590, -84.3880],
+  ['Rittenhouse Square, Philadelphia', 39.9496, -75.1718],
+  ['Independence Hall, Philadelphia', 39.9489, -75.1500],
+  ['Granville Street, Vancouver', 49.2827, -123.1207],
+  ['Rue Sainte-Catherine, Montreal', 45.5088, -73.5673],
+  ['Old Port, Quebec City', 46.8123, -71.2058],
+  ['Stortorget, Malmo', 55.6050, 13.0000],
+  ['Rathausplatz, Vienna', 48.2108, 16.3589],
+  ['Grote Markt, Antwerp', 51.2211, 4.3997],
+  ['Markt, Bruges', 51.2093, 3.2247],
+  ['Neumarkt, Dresden', 51.0515, 13.7415],
+  ['Domplatz, Cologne', 50.9413, 6.9583],
+  ['Place Bellecour, Lyon', 45.7578, 4.8320],
+  ['Vieux Port, Marseille', 43.2951, 5.3744],
+  ['Ghent Korenmarkt', 51.0538, 3.7219],
+  ['Tallinn Town Hall Square', 59.4372, 24.7454],
+  ['Riga Dome Square', 56.9496, 24.1052],
 ];
 
 function readToken() {
@@ -77,7 +129,7 @@ let last = 0;
 
 async function api(params) {
   const q = new URLSearchParams({ ...params, access_token: token });
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const wait = last + INTERVAL_MS - Date.now();
     if (wait > 0) await sleep(wait);
     last = Date.now();
@@ -103,24 +155,30 @@ function dist(aLat, aLng, bLat, bLng) {
 
 const FIELDS = 'id,captured_at,computed_geometry,geometry';
 const thisYear = new Date().getUTCFullYear();
-const HALF_BOX_DEG = 0.003; // 0.006 deg box, under Mapillary's 0.01 limit
+const HALF_BOX_DEG = 0.0012; // about 270 m box; larger boxes make dense cities fail with "reduce the amount of data"
 const MAX_ANCHORS = 400;
 
 // The named coordinate is rarely on a street Mapillary covers, so search a box around it
 // and anchor the spot on the panorama that has the most distinct years within MAX_OFFSET_M.
 async function check([name, lat0, lng0]) {
   const all = []; // {id, year, lat, lng}
-  for (let y = 2014; y <= thisYear; y++) {
-    const data = await api({
-      fields: FIELDS,
-      bbox: [lng0 - HALF_BOX_DEG, lat0 - HALF_BOX_DEG, lng0 + HALF_BOX_DEG, lat0 + HALF_BOX_DEG]
-        .map((n) => n.toFixed(6))
-        .join(','),
-      is_pano: 'true',
-      limit: 2000,
-      start_captured_at: `${y}-01-01T00:00:00Z`,
-      end_captured_at: `${y}-12-31T23:59:59Z`,
-    });
+  const queryYears = [];
+  for (let y = 2014; y <= thisYear; y++) queryYears.push(y);
+  const perYear = await Promise.all(
+    queryYears.map((y) =>
+      api({
+        fields: FIELDS,
+        bbox: [lng0 - HALF_BOX_DEG, lat0 - HALF_BOX_DEG, lng0 + HALF_BOX_DEG, lat0 + HALF_BOX_DEG]
+          .map((n) => n.toFixed(6))
+          .join(','),
+        is_pano: 'true',
+        limit: 500,
+        start_captured_at: `${y}-01-01T00:00:00Z`,
+        end_captured_at: `${y}-12-31T23:59:59Z`,
+      }),
+    ),
+  );
+  for (const data of perYear) {
     for (const img of data) {
       const c = (img.computed_geometry ?? img.geometry)?.coordinates;
       if (!c) continue;
@@ -151,22 +209,38 @@ async function check([name, lat0, lng0]) {
   return { name, lat: bestAnchor.a.lat, lng: bestAnchor.a.lng, years, best, centre: bestAnchor.centre };
 }
 
-const accepted = [];
-for (const cand of CANDIDATES) {
-  if (accepted.length >= TARGET) break;
-  let r;
-  try {
-    r = await check(cand);
-  } catch (e) {
-    console.log(`ERROR  ${cand[0]}: ${e.message}`);
-    continue;
-  }
-  const ok = r.years.length >= MIN_YEARS;
-  console.log(`${ok ? 'OK    ' : 'REJECT'} ${r.name}: ${r.years.length} years [${r.years.join(', ')}] anchor ${Math.round(r.centre ?? 0)} m from named point`);
-  if (!ok) continue;
-  const latest = r.best.get(r.years[r.years.length - 1]);
-  accepted.push({ name: r.name, lat: +r.lat.toFixed(6), lng: +r.lng.toFixed(6), panoId: latest.id, years: r.years });
+// Resume: keep spots already verified in an earlier run, only check candidates not yet accepted.
+const SPOTS_FILE = fileURLToPath(new URL('./spots.json', import.meta.url));
+let accepted = [];
+try {
+  accepted = JSON.parse(readFileSync(SPOTS_FILE, 'utf8'));
+} catch {
+  accepted = [];
 }
+const have = new Set(accepted.map((s) => s.name));
+// Optional first argument: index of the first candidate to check (skip ones already rejected in earlier runs).
+const START = Number(process.argv[2] ?? 0) || 0;
+const queue = CANDIDATES.slice(START).filter((c) => !have.has(c[0]));
+const save = () => writeFileSync(SPOTS_FILE, JSON.stringify(accepted, null, 2) + '\n');
+async function worker() {
+  while (queue.length && accepted.length < TARGET) {
+    const cand = queue.shift();
+    let r;
+    try {
+      r = await check(cand);
+    } catch (e) {
+      console.log(`ERROR  ${cand[0]}: ${e.message}`);
+      continue;
+    }
+    const ok = r.years.length >= MIN_YEARS;
+    console.log(`${ok ? 'OK    ' : 'REJECT'} ${r.name}: ${r.years.length} years [${r.years.join(', ')}] anchor ${Math.round(r.centre ?? 0)} m from named point`);
+    if (!ok || accepted.length >= TARGET) continue;
+    const latest = r.best.get(r.years[r.years.length - 1]);
+    accepted.push({ name: r.name, lat: +r.lat.toFixed(6), lng: +r.lng.toFixed(6), panoId: latest.id, years: r.years });
+    save(); // keep progress if the run is interrupted
+  }
+}
+await Promise.all([worker(), worker(), worker(), worker()]);
 
 writeFileSync(
   fileURLToPath(new URL('./spots.json', import.meta.url)),

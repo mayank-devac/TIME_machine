@@ -35,7 +35,7 @@ node src/data/build-spots.mjs
 ```
 
 Parses `VITE_MAPILLARY_TOKEN` from `.env.local` (never sourced, never printed), queries each candidate
-year by year, keeps spots with at least 3 years of panoramas within 40 m, writes the first 30 that pass.
+year by year, keeps spots with at least 3 years of panoramas within 40 m, writes up to 30 that pass (4 requests in parallel, saves after each accepted spot).
 It takes a few minutes (about 13 requests per candidate at 120 ms apart).
 
 ## Tests
