@@ -23,3 +23,10 @@ The plan is `initial plan.md`. Project skills: `mapillary-api`, `pano-rendering`
 
 - **Entry points.** Each track exports its entry from `src/<folder>/entry.ts` (see
   `src/contracts.ts`). Create app content with `createTransformEntity(obj, { persistent: true })`.
+
+## Design system
+
+All UI follows the translucent glass design system in `.agents/skills/xr-glass-design/SKILL.md`
+(tokens, radii, type, per-surface recipes). Read it before adding or restyling any panel, label,
+frame, button or colour. Surfaces are translucent 8-digit-hex tints with hairline borders, light
+type, and mint/violet/amber accents only.

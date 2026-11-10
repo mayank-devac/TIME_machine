@@ -12,7 +12,7 @@ import {
   smoothDirection,
   smoothingAlpha,
 } from './lens-math.js';
-import { archiveStops, buildLadder, defaultYear, isPanoYear, stepYear } from './years.js';
+import { buildLadder, defaultYear, isPanoYear, limitMessage, stepYear } from './years.js';
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
@@ -31,16 +31,15 @@ function mul(a: QuatLike, b: QuatLike): QuatLike {
 }
 
 describe('year ladder', () => {
-  it('builds archive stops in decades plus the year before the earliest', () => {
-    expect(archiveStops(2016, 1990)).toEqual([1990, 2000, 2010, 2015]);
-    expect(archiveStops(2011, 2000)).toEqual([2000, 2010]);
-    expect(archiveStops(1900, 1900)).toEqual([]);
+  it('leaves the year on screen out of the ladder and invents no years', () => {
+    expect(buildLadder([2025, 2019, 2023], 2025)).toEqual([2019, 2023]);
+    expect(buildLadder([2019, 2023, 2025], 2019)).toEqual([2023, 2025]);
+    expect(buildLadder([], 2025)).toEqual([]);
   });
 
-  it('leaves the year on screen out of the ladder', () => {
-    expect(buildLadder([2025, 2019, 2023], 2025, 2000)).toEqual([2000, 2010, 2018, 2019, 2023]);
-    expect(buildLadder([2019, 2023, 2025], 2019, 2010)).toEqual([2010, 2018, 2023, 2025]);
-    expect(buildLadder([], 2025, 1900)).toEqual([]);
+  it('words the limit message', () => {
+    expect(limitMessage('earlier', 2020)).toBe('No earlier imagery here. Earliest is 2020.');
+    expect(limitMessage('later', 2023)).toBe('No later imagery here. Latest is 2023.');
   });
 
   it('opens on the latest earlier year, else the nearest later one, else nothing', () => {
@@ -52,14 +51,12 @@ describe('year ladder', () => {
   });
 
   it('steps and clamps at both ends', () => {
-    const ladder = buildLadder([2019, 2023, 2025], 2025, 2000);
+    const ladder = buildLadder([2019, 2023, 2025], 2025);
     expect(stepYear(ladder, 2023, -1)).toBe(2019);
-    expect(stepYear(ladder, 2019, -1)).toBe(2018); // below the earliest Mapillary year
-    expect(stepYear(ladder, 2018, -1)).toBe(2010);
-    expect(stepYear(ladder, 2000, -1)).toBe(2000); // floor
+    expect(stepYear(ladder, 2019, -1)).toBe(2019); // floor: nothing earlier
+    expect(stepYear(ladder, 2019, +1)).toBe(2023);
     expect(stepYear(ladder, 2023, +1)).toBe(2023); // ceiling: 2025 is on screen
-    expect(stepYear(ladder, 2023, -99)).toBe(2000);
-    expect(stepYear(ladder, 2000, +99)).toBe(2023);
+    expect(stepYear(ladder, 2023, -99)).toBe(2019);
     expect(stepYear([], 2023, -1)).toBe(2023);
   });
 

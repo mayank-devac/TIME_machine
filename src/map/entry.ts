@@ -1,6 +1,6 @@
 import type { MapTable, Track, TrackFactory } from '../contracts.js';
 import { LandingPage } from './landing.js';
-import { TableMap } from './table.js';
+import { BASE_MAP_KINDS, TableMap, type BaseMapKind } from './table.js';
 
 /**
  * Dev evidence switches. Both must be false when committed for integration.
@@ -9,7 +9,7 @@ import { TableMap } from './table.js';
  *    entering XR logs stats at +0 s and +8 s, pans 500,300 px at +9 s and logs again at +12 s
  *    (the in-session redraw proof described in README.md).
  */
-const DEV_TRACE = false;
+const DEV_TRACE = true;
 const DEV_SCRIPT = false;
 
 export interface MapTrack extends Track, MapTable {
@@ -33,6 +33,12 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
         table.flyTo(p.lat, p.lng, 17);
         bus.emit('spot:selected', { lat: p.lat, lng: p.lng, label: p.label });
       },
+      views: {
+        options: BASE_MAP_KINDS,
+        current: table.getBaseMap(),
+        onChange: (id) => table.setBaseMap(id as BaseMapKind),
+      },
+      buildings3d: { current: table.get3D(), onChange: (on) => table.set3D(on) },
     },
     spots,
   );
@@ -70,7 +76,6 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
     }, 4000);
     (window as unknown as { __map: unknown }).__map = { table, landing };
     if (DEV_SCRIPT) {
-      setTimeout(() => landing.searchNow('Times Square'), 1500);
       // XR redraw proof: does the window's requestAnimationFrame keep running in the session,
       // and does a pan made during the session reach the table texture?
       let rafCount = 0;

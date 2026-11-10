@@ -105,6 +105,7 @@ export function initialAppState(): AppState {
  *  time:toggled       Track G (TIME MACHINE button). Track C listens.
  *  time:yearChanged   Track C (wrist dial or mouse wheel). `year` may be below the earliest
  *                     Mapillary year, which is Track F's cue to show archive photos.
+ *  time:yearRequested Track G (year panel click). Track C jumps the dial to that year.
  *  time:committed     Track C when push-through completes (after `stage.commitPast`).
  *  archive:visible    Track F with the photos now on screen (empty array when hidden).
  *  mode:requested     Anyone (Track G buttons, Track E frame). The orchestrator's flow decides.
@@ -118,6 +119,7 @@ export interface EventMap {
   'time:yearsKnown': { years: number[]; earliest: number | null };
   'time:toggled': { on: boolean };
   'time:yearChanged': { year: number };
+  'time:yearRequested': { year: number };
   'time:committed': { year: number; pano: Pano };
   'archive:visible': { photos: ArchivePhoto[] };
   'mode:requested': { mode: Mode };

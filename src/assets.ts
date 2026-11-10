@@ -16,4 +16,6 @@ export default defineAssets({
   'hud-credits': uikitml('credits.uikitml', 'Credits'),
   'hud-status': uikitml('status.uikitml', 'Status'),
   'hud-portal-button': uikitml('portal-button.uikitml', 'Portal Button'),
+  'hud-year-list': uikitml('year-list.uikitml', 'Year List'),
+  'hud-info-button': uikitml('info-button.uikitml', 'Info Button'),
 });

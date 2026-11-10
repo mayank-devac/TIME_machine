@@ -10,14 +10,14 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
   0.9 m plane at 0.85 m height, 0.62 m in front of the player (north = far edge). Credit
   strip on the rim: "© OpenStreetMap contributors · OpenFreeMap · Coverage © Mapillary".
 - **Coverage layer**: Mapillary vector tiles, `sequence` layer, filtered to
-  `is_pano == true`, drawn green under the labels. Curated spots are orange dots with labels.
+  `is_pano == true`, drawn teal under the labels. Curated spots are violet dots with labels.
   No token means no coverage layer and an `error` event.
 - **Input** goes through IWSDK pointer events on a `RayInteractable` surface, so the desktop
   mouse, controller rays (trigger) and hand rays (pinch) share one code path:
   - one pointer pressed and moved: pan (the map follows the pointer);
   - press and release in place (≤ 1 % of the canvas, ≤ 700 ms): pick. The pick snaps to the
-    nearest green line within 48 canvas px and emits `spot:selected`; a miss emits a
-    recoverable `error` ("No 360° imagery there. Tap a green street.");
+    nearest teal line within 48 canvas px and emits `spot:selected`; a miss emits a
+    recoverable `error` ("No 360° imagery there. Tap a glowing street.");
   - two pointers pressed: spread to zoom (double the spread = +1 zoom), midpoint pans;
   - mouse wheel: zoom around the pointer; right thumbstick up/down: zoom.
   - Zoom is clamped to 12–18 (below 12 a 0.9 m table pulls too many tiles for the quota).
@@ -27,11 +27,10 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
   (≤ 30/s), plus every 150 ms while tiles are loading, and stop after 3 s with no new data.
   `flyTo` is a jump, not an animation, so it does not fetch tiles for every in-between view.
   MapLibre's container has `clientWidth/Height` pinned (the managed tab reports 0×0).
-- **Landing page** (`landing.ts`, `photon.ts`): a 2D DOM card with Photon place search
-  (debounced 350 ms, ≥ 3 characters, one request in flight, older ones aborted) and the
+- **Landing page** (`landing.ts`, `photon.ts`): a 2D DOM card with the
   curated list from `PanoSource.spots()`. Clicking a name shows the place on the table;
   "Street view" emits `spot:selected`. The card is hidden while an XR session runs or the
-  mode is not `table`. It carries the full credit line (OSM, OpenFreeMap, Mapillary, Photon).
+  mode is not `table`. It carries the full credit line (OSM, OpenFreeMap, Mapillary).
 - Pure maths (projection, pan, zoom-around, pinch, snap, tap test) is in `geo.ts`.
 
 ## Is redrawing during an XR session proven?

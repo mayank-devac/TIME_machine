@@ -24,7 +24,6 @@ export interface LensTuning {
   pushHoldMs: number;
   retractSpeed: number;
   closeMs: number;
-  archiveFloorYear: number;
 }
 
 export class LensMachine {
@@ -62,7 +61,7 @@ export class LensMachine {
     return this.phase !== 'pushing' && this.phase !== 'committed';
   }
 
-  /** The dialled year has a panorama (false for archive stops and when off). */
+  /** The dialled year has a panorama (false only when off). */
   get yearHasPano(): boolean {
     return isPanoYear(this.panoYears, this.year);
   }
@@ -78,7 +77,7 @@ export class LensMachine {
   setYears(panoYears: readonly number[], currentYear: number | null): boolean {
     this.panoYears = [...panoYears];
     this.currentYear = currentYear;
-    this.ladder = buildLadder(panoYears, currentYear, this.t.archiveFloorYear);
+    this.ladder = buildLadder(panoYears, currentYear);
     if (this.isActive && (this.year === null || !this.ladder.includes(this.year))) this.reset();
     return this.tryOpen();
   }
@@ -114,13 +113,35 @@ export class LensMachine {
     this.phaseMs = 0;
   }
 
+  /**
+   * Set by `step`/`jumpTo` when the dial hit an end of the ladder: the direction it tried to
+   * go and the year it is stuck on. Cleared by the next successful move.
+   */
+  blocked: { direction: 'earlier' | 'later'; edgeYear: number } | null = null;
+
+  private get canDial(): boolean {
+    return this.phase === 'opening' || this.phase === 'open' || this.phase === 'dialling';
+  }
+
   /** Dial input: move `delta` stops (negative is earlier). Returns true if the year changed. */
   step(delta: number): boolean {
-    if (delta === 0 || this.year === null) return false;
-    if (this.phase !== 'opening' && this.phase !== 'open' && this.phase !== 'dialling') return false;
+    if (delta === 0 || this.year === null || !this.canDial) return false;
     const next = stepYear(this.ladder, this.year, delta);
-    if (next === this.year) return false;
+    if (next === this.year) {
+      this.blocked = { direction: delta < 0 ? 'earlier' : 'later', edgeYear: this.year };
+      return false;
+    }
+    this.blocked = null;
     this.year = next;
+    this.pastReady = false;
+    return true;
+  }
+
+  /** Jump straight to a listed year (the year panel). Returns true if the year changed. */
+  jumpTo(year: number): boolean {
+    if (this.year === null || !this.canDial || year === this.year || !this.ladder.includes(year)) return false;
+    this.blocked = null;
+    this.year = year;
     this.pastReady = false;
     return true;
   }

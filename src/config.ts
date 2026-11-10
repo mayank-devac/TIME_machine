@@ -36,7 +36,7 @@ export const config = {
   },
 
   map: {
-    tableSizeM: 0.9,
+    tableSizeM: 1.7,
     tableHeightM: 0.85,
     canvasPx: 2048,
     defaultZoom: 15,

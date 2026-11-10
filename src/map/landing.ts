@@ -1,62 +1,111 @@
 /**
- * The 2D landing page card: place search (Photon) and the curated list. Plain DOM, mounted
- * into document.body by the map track and hidden while an immersive session runs or when the
- * app is not in table mode.
+ * The 2D landing page: an intro card (top left) and a rail of curated places with imagery
+ * (bottom) that drifts right to left. Plain DOM, mounted into document.body by the map track
+ * and hidden while an immersive session runs or when the app is not in table mode.
+ * Styling follows .agents/skills/xr-glass-design (glass, hairlines, violet/mint accents).
  */
 import type { CuratedSpot } from '../contracts.js';
-import { createDebouncedSearch, searchPlaces, type PlaceResult } from './photon.js';
+import type { PlaceResult } from './photon.js';
 
 export const LANDING_CREDIT =
-  'Map data © OpenStreetMap contributors · Map tiles by OpenFreeMap · Street imagery and coverage © Mapillary and its contributors · Search by Photon (komoot)';
+  'Map data © OpenStreetMap contributors · Map tiles by OpenFreeMap · Street imagery and coverage © Mapillary and its contributors';
 
 export interface LandingCallbacks {
   /** Show this place on the table map. */
   onPreview(place: PlaceResult): void;
   /** Go straight into the street view here. */
   onEnter(place: PlaceResult): void;
+  /** Optional: base-map choice shown as a segmented control. */
+  views?: {
+    options: ReadonlyArray<{ id: string; label: string }>;
+    current: string;
+    onChange(id: string): void;
+  };
+  /** Optional: 3D buildings switch (tilted map with extruded buildings). */
+  buildings3d?: {
+    current: boolean;
+    onChange(on: boolean): void;
+  };
 }
 
+// Street-view glyph: a person standing inside a 360 ring. Decorative; the button carries the label.
+const STREET_VIEW_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="2.2"/><path d="M12 10.5v5M9 12.5l3-2 3 2M10 20l2-4.5 2 4.5"/><path d="M4 17c-1 .8-1.5 1.6-1.5 2.5C2.5 21.4 6.8 23 12 23s9.5-1.6 9.5-3.5c0-.9-.5-1.7-1.5-2.5" stroke-width="1.4"/></svg>';
+
 const CSS = `
-.tm-landing{position:fixed;left:16px;top:64px;z-index:1000;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 80px);
-  display:flex;flex-direction:column;gap:10px;padding:16px;box-sizing:border-box;border-radius:14px;
-  background:rgba(17,20,24,.88);color:#eef2f5;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  box-shadow:0 8px 32px rgba(0,0,0,.35);backdrop-filter:blur(8px);overflow:hidden}
-.tm-landing[hidden]{display:none}
-.tm-landing h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.01em}
-.tm-landing p{margin:0;color:#b9c3cc}
-.tm-landing .tm-search{display:flex;gap:6px}
-.tm-landing input{flex:1;min-width:0;padding:10px 12px;border-radius:9px;border:1px solid #3a434d;background:#0c0f12;color:#eef2f5;font:inherit}
-.tm-landing input:focus{outline:2px solid #05cb63;outline-offset:1px}
-.tm-landing button{font:inherit;cursor:pointer;border:0;border-radius:8px}
-.tm-landing .tm-list{list-style:none;margin:0;padding:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
-.tm-landing .tm-row{display:flex;align-items:center;gap:6px}
-.tm-landing .tm-place{flex:1;min-width:0;text-align:left;padding:8px 10px;background:#1d232a;color:#eef2f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tm-landing .tm-place:hover,.tm-landing .tm-place:focus-visible{background:#28313a}
-.tm-landing .tm-go{padding:8px 10px;background:#05cb63;color:#06210f;font-weight:700;white-space:nowrap}
-.tm-landing .tm-go:hover{background:#2be080}
-.tm-landing .tm-label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8995a1;margin-top:4px}
-.tm-landing .tm-status{min-height:1.4em;color:#9fe8bd;font-size:13px}
-.tm-landing .tm-status.tm-err{color:#ff9b9b}
-.tm-landing .tm-credit{font-size:11px;color:#8995a1;border-top:1px solid #2a323a;padding-top:8px}
-.tm-landing .tm-credit a{color:#b9c3cc}
-.tm-landing .tm-toggle{position:absolute;right:10px;top:10px;padding:4px 8px;background:transparent;color:#8995a1}
+.tm-landing,.tm-rail{--glass:rgba(15,18,28,.62);--hair:rgba(255,255,255,.22);--soft:rgba(255,255,255,.72);--faint:rgba(255,255,255,.45);
+  --violet:#7c6cff;--mint:#2ee6d6;
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff}
+.tm-landing[hidden],.tm-rail[hidden]{display:none}
+.tm-landing button,.tm-rail button{font:inherit;color:inherit;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
+.tm-landing button:focus-visible,.tm-rail button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+
+/* Intro card */
+.tm-landing{position:fixed;left:20px;top:64px;z-index:1000;width:min(320px,calc(100vw - 40px));box-sizing:border-box;padding:18px;
+  display:flex;flex-direction:column;gap:12px;border-radius:20px;background:var(--glass);border:1px solid var(--hair);
+  box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
+.tm-landing .tm-head{display:flex;align-items:center;gap:10px}
+.tm-landing h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:500;letter-spacing:.01em;line-height:1.2}
+.tm-landing .tm-toggle{flex:none;padding:4px 12px;border-radius:999px;border:1px solid var(--hair);background:rgba(255,255,255,.06);color:var(--soft);font-size:12px}
+.tm-landing .tm-toggle:hover{background:rgba(255,255,255,.14);color:#fff}
+.tm-landing .tm-body{display:flex;flex-direction:column;gap:10px;min-height:0}
+.tm-landing .tm-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--soft);font-size:13px}
+.tm-landing .tm-steps li{display:flex;gap:10px;align-items:baseline}
+.tm-landing .tm-steps i{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:500;color:#fff;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.6)}
+.tm-landing .tm-steps b{font-weight:500;color:#fff}
+.tm-landing .tm-label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint)}
+.tm-landing .tm-views{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--hair)}
+.tm-landing .tm-views button{flex:1;padding:6px 10px;border:0;border-radius:999px;background:transparent;color:var(--soft);font-size:13px}
+.tm-landing .tm-views button:hover{color:#fff;background:rgba(255,255,255,.08)}
+.tm-landing .tm-views button[aria-pressed=true]{background:rgba(124,108,255,.45);color:#fff}
+.tm-landing .tm-status{color:#7ff5ea;font-size:13px}
+.tm-landing .tm-status:empty{display:none}
+.tm-landing .tm-credit{margin-top:2px}
+.tm-landing .tm-credit{font-size:10.5px;line-height:1.5;color:var(--faint)}
+
+/* Curated rail: one line, drifting right to left; pauses on hover or keyboard focus */
+.tm-rail{position:fixed;left:0;right:0;bottom:20px;z-index:1000;overflow:hidden;padding:4px 0;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 72px,#000 calc(100% - 72px),transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 72px,#000 calc(100% - 72px),transparent)}
+.tm-rail .tm-track{list-style:none;margin:0;padding:0;display:flex;width:max-content;animation:tm-scroll var(--tm-dur,40s) linear infinite}
+.tm-rail:hover .tm-track,.tm-rail:focus-within .tm-track{animation-play-state:paused}
+.tm-rail .tm-card{flex:none;display:flex;align-items:center;gap:4px;margin-right:12px;padding:6px 6px 6px 4px;border-radius:20px;
+  background:var(--glass);border:1px solid var(--hair);box-shadow:0 6px 24px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.1);
+  backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4)}
+.tm-rail .tm-place{display:flex;flex-direction:column;gap:1px;min-width:0;padding:4px 14px 4px 14px;border:0;border-radius:16px;background:transparent;text-align:left;white-space:nowrap}
+.tm-rail .tm-place:hover{background:rgba(255,255,255,.08)}
+.tm-rail .tm-name{font-size:14px;font-weight:500;line-height:1.25}
+.tm-rail .tm-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--soft);line-height:1.25}
+.tm-rail .tm-years{padding:0 7px;border-radius:999px;font-size:11px;color:#7ff5ea;background:rgba(46,230,214,.12);border:1px solid rgba(46,230,214,.3)}
+.tm-rail .tm-icon{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.65)}
+.tm-rail .tm-icon:hover{background:rgba(124,108,255,.7);transform:scale(1.06)}
+.tm-rail .tm-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@keyframes tm-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){
+  .tm-rail{overflow-x:auto;scrollbar-width:none}
+  .tm-rail .tm-track{animation:none}
+  .tm-rail .tm-card[aria-hidden]{display:none}
+}
+@media (max-width:560px){.tm-landing{left:12px;top:56px;width:calc(100vw - 24px)}.tm-rail{bottom:12px}}
 `;
+
+interface RailPlace extends PlaceResult {
+  years?: number[];
+}
 
 export class LandingPage {
   readonly element: HTMLElement;
   private readonly style: HTMLStyleElement;
-  private readonly input: HTMLInputElement;
-  private readonly results: HTMLUListElement;
   private readonly curated: HTMLUListElement;
+  private readonly rail: HTMLElement;
   private readonly status: HTMLElement;
   private readonly body: HTMLElement;
-  private readonly search;
   private collapsed = false;
 
   constructor(
     private readonly cb: LandingCallbacks,
     spots: CuratedSpot[],
-    fetchFn: typeof fetch = fetch.bind(globalThis),
+    _fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {
     this.style = document.createElement('style');
     this.style.textContent = CSS;
@@ -64,107 +113,156 @@ export class LandingPage {
 
     const root = document.createElement('section');
     root.className = 'tm-landing';
-    root.setAttribute('aria-label', 'Choose a place');
+    root.setAttribute('aria-label', 'Street View Time Machine');
     root.innerHTML = `
-      <button type="button" class="tm-toggle" aria-expanded="true" title="Hide">Hide</button>
-      <h1>Street View Time Machine</h1>
-      <div class="tm-body" style="display:flex;flex-direction:column;gap:10px;min-height:0">
-        <p>Find a place, then press <b>Enter XR</b> to stand at the map table. Tap a green street to step into it.</p>
-        <form class="tm-search" role="search">
-          <input type="search" placeholder="Search a place, e.g. Times Square" aria-label="Search a place" autocomplete="off" />
-          <button type="submit" class="tm-go">Search</button>
-        </form>
+      <div class="tm-head">
+        <h1>Street View Time Machine</h1>
+        <button type="button" class="tm-toggle" aria-expanded="true" title="Hide">Hide</button>
+      </div>
+      <div class="tm-body">
+        <ol class="tm-steps">
+          <li><i>1</i><span>Pick a place from the strip below.</span></li>
+          <li><i>2</i><span>Press <b>Enter XR</b> to stand at the map table.</span></li>
+          <li><i>3</i><span>Tap a glowing street to step into it.</span></li>
+        </ol>
+        <div class="tm-views-wrap" style="display:flex;flex-direction:column;gap:6px">
+          <div class="tm-label">Map</div>
+          <div class="tm-views" role="group" aria-label="Map view"></div>
+          <div class="tm-views tm-3d" role="group" aria-label="Buildings"></div>
+        </div>
         <div class="tm-status" role="status" aria-live="polite"></div>
-        <ul class="tm-list tm-results" aria-label="Search results"></ul>
-        <div class="tm-label">Curated places</div>
-        <ul class="tm-list tm-curated" aria-label="Curated places"></ul>
         <div class="tm-credit">${LANDING_CREDIT}</div>
       </div>`;
     this.element = root;
-    this.input = root.querySelector('input')!;
-    this.results = root.querySelector('.tm-results')!;
-    this.curated = root.querySelector('.tm-curated')!;
+    this.rail = document.createElement('nav');
+    this.rail.className = 'tm-rail';
+    this.rail.setAttribute('aria-label', 'Curated places with street imagery');
+    this.curated = document.createElement('ul');
+    this.curated.className = 'tm-track';
+    this.rail.appendChild(this.curated);
     this.status = root.querySelector('.tm-status')!;
     this.body = root.querySelector('.tm-body')!;
     const toggle = root.querySelector<HTMLButtonElement>('.tm-toggle')!;
 
-    this.search = createDebouncedSearch({
-      search: (q, signal) => searchPlaces(q, { fetchFn, signal }),
-      onResults: (list, q) => this.showResults(list, q),
-      onError: (err) => this.setStatus(`Search failed: ${err instanceof Error ? err.message : String(err)}`, true),
-      onBusy: (busy) => busy && this.setStatus('Searching...'),
-    });
-
-    this.input.addEventListener('input', () => this.search.input(this.input.value));
-    root.querySelector('form')!.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.search.input(this.input.value);
-      this.search.flush();
-    });
     toggle.addEventListener('click', () => {
       this.collapsed = !this.collapsed;
       this.body.style.display = this.collapsed ? 'none' : 'flex';
       toggle.textContent = this.collapsed ? 'Show' : 'Hide';
+      toggle.title = this.collapsed ? 'Show' : 'Hide';
       toggle.setAttribute('aria-expanded', String(!this.collapsed));
     });
 
+    const views = this.cb.views;
+    const viewsEl = root.querySelector<HTMLElement>('.tm-views')!;
+    if (views) {
+      for (const o of views.options) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = o.label;
+        b.setAttribute('aria-pressed', String(o.id === views.current));
+        b.addEventListener('click', () => {
+          viewsEl.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+          views.onChange(o.id);
+        });
+        viewsEl.appendChild(b);
+      }
+    } else {
+      root.querySelector('.tm-views-wrap')!.remove();
+    }
+    const b3d = this.cb.buildings3d;
+    const b3dEl = root.querySelector<HTMLElement>('.tm-3d');
+    if (b3dEl) {
+      if (!b3d) {
+        b3dEl.remove();
+      } else {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '3D buildings';
+        btn.title = 'Tilt the table map and raise buildings off the ground';
+        btn.setAttribute('aria-pressed', String(b3d.current));
+        btn.addEventListener('click', () => {
+          const on = btn.getAttribute('aria-pressed') !== 'true';
+          btn.setAttribute('aria-pressed', String(on));
+          b3d.onChange(on);
+        });
+        b3dEl.appendChild(btn);
+      }
+    }
+
     this.setSpots(spots);
-    document.body.appendChild(root);
+    document.body.append(root, this.rail);
   }
 
   setSpots(spots: CuratedSpot[]): void {
-    this.curated.replaceChildren(
-      ...spots.map((s) => this.row({ label: s.name, lat: s.lat, lng: s.lng })),
-    );
+    const cards = () =>
+      spots.map((s) => this.card({ label: s.name, lat: s.lat, lng: s.lng, years: s.years }));
+    // Second copy makes the loop seamless (the track slides by exactly half its width).
+    const copy = cards();
+    copy.forEach((li) => {
+      li.setAttribute('aria-hidden', 'true');
+      li.querySelectorAll('button').forEach((b) => (b.tabIndex = -1));
+    });
+    this.curated.replaceChildren(...cards(), ...copy);
+    this.curated.style.setProperty('--tm-dur', `${Math.max(24, spots.length * 5)}s`);
   }
 
   setVisible(visible: boolean): void {
     this.element.hidden = !visible;
-  }
-
-  /** Dev/test hook: type a query and search immediately. */
-  searchNow(text: string): void {
-    this.input.value = text;
-    this.search.input(text);
-    this.search.flush();
+    this.rail.hidden = !visible;
   }
 
   dispose(): void {
-    this.search.cancel();
     this.element.remove();
+    this.rail.remove();
     this.style.remove();
   }
 
   private setStatus(text: string, error = false): void {
     this.status.textContent = text;
-    this.status.classList.toggle('tm-err', error);
+    this.status.style.color = error ? '#ff8a8a' : '';
   }
 
-  private showResults(list: PlaceResult[], query: string): void {
-    this.results.replaceChildren(...list.map((p) => this.row(p)));
-    if (!query) this.setStatus('');
-    else if (list.length === 0) this.setStatus(`No places found for "${query}".`);
-    else this.setStatus('Pick a result to show it on the table.');
-  }
-
-  private row(place: PlaceResult): HTMLLIElement {
+  /** One place: the name opens it on the table, the round button steps into the street. */
+  private card(place: RailPlace): HTMLLIElement {
+    const [title, ...rest] = place.label.split(',');
+    const where = rest.join(',').trim();
     const li = document.createElement('li');
-    li.className = 'tm-row';
+    li.className = 'tm-card';
+
     const name = document.createElement('button');
     name.type = 'button';
     name.className = 'tm-place';
-    name.textContent = place.label;
     name.title = `Show ${place.label} on the table map`;
+    const t = document.createElement('span');
+    t.className = 'tm-name';
+    t.textContent = title.trim();
+    const meta = document.createElement('span');
+    meta.className = 'tm-meta';
+    if (where) meta.append(where);
+    const ys = place.years?.filter((y) => Number.isFinite(y));
+    if (ys && ys.length > 0) {
+      const lo = Math.min(...ys);
+      const hi = Math.max(...ys);
+      const chip = document.createElement('span');
+      chip.className = 'tm-years';
+      chip.textContent = lo === hi ? String(lo) : `${lo}–${hi}`;
+      chip.title = `Imagery from ${ys.length} year${ys.length === 1 ? '' : 's'}`;
+      meta.append(chip);
+    }
+    name.append(t, meta);
     name.addEventListener('click', () => {
       this.cb.onPreview(place);
-      this.setStatus(`Showing ${place.label.split(',')[0]} on the table.`);
+      this.setStatus(`Showing ${title.trim()} on the table.`);
     });
+
     const go = document.createElement('button');
     go.type = 'button';
-    go.className = 'tm-go';
-    go.textContent = 'Street view';
+    go.className = 'tm-icon';
+    go.innerHTML = STREET_VIEW_ICON;
+    go.setAttribute('aria-label', `Street view: ${place.label}`);
     go.title = `Step into the street at ${place.label}`;
     go.addEventListener('click', () => this.cb.onEnter(place));
+
     li.append(name, go);
     return li;
   }

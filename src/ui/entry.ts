@@ -7,7 +7,10 @@ import {
   SLOTS,
   ToastQueue,
   composeCredits,
+  MAX_YEAR_CHIPS,
   deriveHud,
+  yearChipAction,
+  yearChips,
   slotPosition,
   yawFromForward,
 } from './hud-logic.js';
@@ -16,9 +19,11 @@ import type { HudSlot, Toast } from './hud-logic.js';
 const ASSET_IDS: Record<HudSlot, string> = {
   time: 'hud-time-button',
   year: 'hud-year-label',
+  years: 'hud-year-list',
   credits: 'hud-credits',
   status: 'hud-status',
   portal: 'hud-portal-button',
+  info: 'hud-info-button',
 };
 
 interface Panel {
@@ -28,15 +33,19 @@ interface Panel {
 }
 
 const COLORS = {
-  timeOn: '#3b2a8f',
-  timeBackToNow: '#8f2a6a',
-  timeDisabled: '#3a3d48',
-  textDisabled: '#8a8f9f',
-  loading: '#1d2a4a',
-  error: '#6b1d1d',
-  info: '#6b4a10',
-  yearNow: '#14161d',
-  yearPast: '#5a3a08',
+  // Translucent glass tints: 8-digit hex, last byte is alpha.
+  timeOn: '#7c6cff59',
+  timeBackToNow: '#ff5fb559',
+  timeDisabled: '#ffffff14',
+  textDisabled: '#ffffff66',
+  loading: '#0f121c99',
+  error: '#ff5a5a66',
+  info: '#ffb84d59',
+  yearNow: '#ffffff1f',
+  yearPast: '#ffb84d40',
+  chip: '#ffffff1f',
+  chipSelected: '#7c6cff59',
+  chipPresent: '#ffffff33',
 } as const;
 
 const RECENTRE_AFTER_XR_MS = 700;
@@ -130,6 +139,26 @@ export const createTrack: TrackFactory = async (ctx) => {
     }
   };
 
+  let chips: ReturnType<typeof yearChips> = [];
+  const refreshYearList = (): void => {
+    chips = yearChips({ state: state.get(), yearsKnown });
+    setVisible('years', chips.length > 0);
+    for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
+      const chip = chips[i];
+      const root = box('years', `year-chip-${i}`);
+      root?.setProperties({
+        display: chip ? 'flex' : 'none',
+        backgroundColor: !chip ? COLORS.chip : chip.selected ? COLORS.chipSelected : chip.isPresent ? COLORS.chipPresent : COLORS.chip,
+      });
+      if (chip) {
+        text('years', `year-chip-label-${i}`)?.setProperties({
+          text: String(chip.year),
+          color: chip.selected ? '#ffffff' : '#ffffffcc',
+        });
+      }
+    }
+  };
+
   const refreshHud = (): void => {
     const view = deriveHud({ state: state.get(), yearsKnown });
     setVisible('time', view.showTimeButton);
@@ -151,6 +180,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       backgroundColor: view.yearIsPast ? COLORS.yearPast : COLORS.yearNow,
     });
     text('portal', 'portal-btn-label')?.setProperties({ text: view.portalButtonLabel });
+    refreshYearList();
     refreshStatus();
   };
 
@@ -168,15 +198,15 @@ export const createTrack: TrackFactory = async (ctx) => {
   };
 
   // ---------------------------------------------------------------------------------------
-  // Create the five panels (persistent app content, not level content)
+  // Create the HUD panels (persistent app content, not level content)
   // ---------------------------------------------------------------------------------------
   for (const slot of Object.keys(ASSET_IDS) as HudSlot[]) {
     const asset = await world.assets.instantiate<UIKitMLAsset>(ASSET_IDS[slot]);
     asset.name = `hud-${slot}`;
     const entity = world.createTransformEntity(asset, { persistent: true });
     entity.addComponent(HudTag, { slot });
-    if (slot === 'time' || slot === 'portal') entity.addComponent(RayInteractable);
-    asset.visible = slot === 'credits';
+    if (slot === 'time' || slot === 'portal' || slot === 'info' || slot === 'years') entity.addComponent(RayInteractable);
+    asset.visible = slot === 'info';
     panels.set(slot, { entity, asset, object: asset });
   }
 
@@ -189,13 +219,39 @@ export const createTrack: TrackFactory = async (ctx) => {
   const onPortalClick = (): void => {
     bus.emit('mode:requested', { mode: deriveHud({ state: state.get(), yearsKnown }).portalTarget });
   };
+  const onChipClick = (i: number): void => {
+    const chip = chips[i];
+    if (!chip) return;
+    const action = yearChipAction(chip, state.get().timeOn);
+    if (action.kind === 'toggleOff') {
+      if (state.get().timeOn) bus.emit('time:toggled', { on: false });
+      return;
+    }
+    if (action.openLens) bus.emit('time:toggled', { on: true });
+    bus.emit('time:yearRequested', { year: action.year });
+  };
+  for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
+    const el = box('years', `year-chip-${i}`);
+    const handler = (): void => onChipClick(i);
+    el?.addEventListener('click', handler);
+    offs.push(() => el?.removeEventListener('click', handler));
+  }
   const timeBtn = box('time', 'time-btn');
   const portalBtn = box('portal', 'portal-btn');
   timeBtn?.addEventListener('click', onTimeClick);
   portalBtn?.addEventListener('click', onPortalClick);
+  const onInfoClick = (): void => {
+    const panel = panels.get('credits');
+    if (!panel) return;
+    panel.object.visible = !panel.object.visible;
+    refreshCredits();
+  };
+  const infoBtn = box('info', 'info-btn');
+  infoBtn?.addEventListener('click', onInfoClick);
   offs.push(
     () => timeBtn?.removeEventListener('click', onTimeClick),
     () => portalBtn?.removeEventListener('click', onPortalClick),
+    () => infoBtn?.removeEventListener('click', onInfoClick),
   );
 
   // ---------------------------------------------------------------------------------------

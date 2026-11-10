@@ -92,6 +92,43 @@ export function deriveHud({ state, yearsKnown }: HudInputs): HudView {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Year list (the small panel under the TIME MACHINE button)
+// ---------------------------------------------------------------------------------------------
+
+export const MAX_YEAR_CHIPS = 8;
+
+export interface YearChip {
+  year: number;
+  /** The year now on screen (the lens year when the lens is on, else the present). */
+  selected: boolean;
+  /** The year of the panorama the viewer stands in, i.e. "now". */
+  isPresent: boolean;
+}
+
+/**
+ * One chip per year the imagery source really has here, ascending, newest kept if there are
+ * more than `MAX_YEAR_CHIPS`. Empty outside street/portal or before the years are known.
+ */
+export function yearChips({ state, yearsKnown }: HudInputs): YearChip[] {
+  const inScene = state.mode === 'street' || state.mode === 'portal';
+  if (!inScene || !yearsKnown || state.pano === null || state.years.length < 2) return [];
+  const present = yearOf(state.pano);
+  const shown = state.timeOn && state.year !== null ? state.year : present;
+  return [...state.years]
+    .sort((a, b) => a - b)
+    .slice(-MAX_YEAR_CHIPS)
+    .map((year) => ({ year, selected: year === shown, isPresent: year === present }));
+}
+
+/** What a click on a chip should do. */
+export type YearChipAction = { kind: 'toggleOff' } | { kind: 'goto'; year: number; openLens: boolean };
+
+export function yearChipAction(chip: YearChip, timeOn: boolean): YearChipAction {
+  if (chip.isPresent) return { kind: 'toggleOff' };
+  return { kind: 'goto', year: chip.year, openLens: !timeOn };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Busy scopes (spinner)
 // ---------------------------------------------------------------------------------------------
 
@@ -215,7 +252,7 @@ export class ToastQueue {
 // Placement (pure maths; entry.ts applies it to the panels)
 // ---------------------------------------------------------------------------------------------
 
-export type HudSlot = 'time' | 'year' | 'credits' | 'status' | 'portal';
+export type HudSlot = 'time' | 'year' | 'years' | 'credits' | 'status' | 'portal' | 'info';
 
 export interface SlotSpec {
   /** Degrees to the left of the user's forward direction (negative is right). */
@@ -227,9 +264,11 @@ export interface SlotSpec {
 }
 
 export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
-  credits: { leftDeg: 0, distance: 1.5, dy: -0.75 },
+  credits: { leftDeg: 0, distance: 1.5, dy: -0.66 },
+  info: { leftDeg: 0, distance: 1.5, dy: -0.78 },
   status: { leftDeg: 0, distance: 1.5, dy: -0.5 },
   time: { leftDeg: 32, distance: 1.4, dy: -0.2 },
+  years: { leftDeg: 32, distance: 1.4, dy: -0.37 },
   year: { leftDeg: -32, distance: 1.4, dy: -0.05 },
   portal: { leftDeg: -32, distance: 1.4, dy: -0.4 },
 };

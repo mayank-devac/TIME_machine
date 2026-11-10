@@ -28,8 +28,8 @@ export const TIME = {
   /** Lens shrink time when TIME MACHINE is switched off. */
   closeMs: 250,
 
-  /** Archive (pre-Mapillary) stops go down in decades to this year. */
-  archiveFloorYear: 1900,
+  /** Minimum gap between two "no more imagery" messages while the user keeps pushing. */
+  limitMessageGapSec: 2,
 
   /** Mouse wheel travel (deltaY units) for one year step. One notch is about 100. */
   wheelStepPx: 100,

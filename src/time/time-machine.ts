@@ -11,7 +11,7 @@ import { smoothDirection, smoothingAlpha } from './lens-math.js';
 import { LensMachine } from './machine.js';
 import type { LensPhase } from './machine.js';
 import { LensRim } from './rim.js';
-import { sortedYears } from './years.js';
+import { limitMessage, sortedYears } from './years.js';
 
 const DEV = import.meta.env.DEV;
 
@@ -28,7 +28,6 @@ export class TimeMachine {
     pushHoldMs: TIME.pushHoldMs,
     retractSpeed: TIME.retractSpeed,
     closeMs: TIME.closeMs,
-    archiveFloorYear: TIME.archiveFloorYear,
   });
   /** Highest `stage.textureCount()` seen. Must never exceed `config.texture.maxLive`. */
   maxTexturesSeen = 0;
@@ -52,6 +51,7 @@ export class TimeMachine {
   private lastPhase: LensPhase = 'off';
   private lastYear: number | null = null;
   private disposed = false;
+  private lastLimitSec = -Infinity;
 
   constructor(private readonly ctx: TrackContext) {
     const { bus, state, world, services } = ctx;
@@ -72,6 +72,12 @@ export class TimeMachine {
         this.refresh();
       }),
       bus.on('mode:changed', () => this.refresh()),
+      bus.on('time:yearRequested', ({ year }) => {
+        if (this.machine.jumpTo(year)) {
+          this.ctx.bus.emit('time:yearChanged', { year });
+          this.requestPast();
+        }
+      }),
     );
 
     if (services.stage.currentPano) void this.onPanoShown(services.stage.currentPano);
@@ -144,7 +150,7 @@ export class TimeMachine {
     const year = this.machine.year;
     const pano = year === null ? undefined : this.yearMap.get(year);
     if (!pano || !this.machine.yearHasPano) {
-      // Archive stop: no panorama for this year, so nothing to load (Track F takes over).
+      // No panorama for this year (the dial should never land here): nothing to load.
       this.wanted = null;
       this.machine.pastReady = false;
       return;
@@ -235,9 +241,19 @@ export class TimeMachine {
     const lens = stage.lens;
     const dtMs = dtSec * 1000;
 
-    if (yearDelta !== 0 && m.step(yearDelta)) {
-      this.ctx.bus.emit('time:yearChanged', { year: m.year as number });
-      this.requestPast();
+    if (yearDelta !== 0) {
+      if (m.step(yearDelta)) {
+        this.ctx.bus.emit('time:yearChanged', { year: m.year as number });
+        this.requestPast();
+      } else if (m.blocked && timeSec - this.lastLimitSec > TIME.limitMessageGapSec) {
+        // The dial is at the first or last year with imagery: say so, at most once per gap.
+        this.lastLimitSec = timeSec;
+        this.ctx.bus.emit('error', {
+          source: 'time',
+          message: limitMessage(m.blocked.direction, m.blocked.edgeYear),
+          recoverable: true,
+        });
+      }
     }
 
     const signal = m.update(dtMs, pushHeld, dialHeld);

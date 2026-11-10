@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pano } from '../contracts.js';
 import {
+  yearChipAction,
+  yearChips,
   BusyScopes,
   SLOTS,
   ToastQueue,
@@ -10,7 +12,7 @@ import {
   slotPosition,
   yawFromForward,
 } from './hud-logic.js';
-import type { Toast } from './hud-logic.js';
+import type { HudInputs, Toast } from './hud-logic.js';
 
 const pano = (creator: string, year = 2025): Pano =>
   ({ id: 'p', creator, capturedAt: Date.UTC(year, 5, 1) }) as Pano;
@@ -196,5 +198,35 @@ describe('stale lens state', () => {
     expect(v.timeButtonLabel).toBe('TIME MACHINE');
     expect(v.yearText).toBe('2025');
     expect(v.yearIsPast).toBe(false);
+  });
+});
+
+describe('year chips', () => {
+  const here = pano('x', 2023);
+  const base: HudInputs['state'] = { mode: 'street', pano: here, years: [2020, 2022, 2023], timeOn: false, year: null };
+
+  it('lists only the years the source has, newest last, present marked', () => {
+    const chips = yearChips({ state: base, yearsKnown: true });
+    expect(chips.map((c) => c.year)).toEqual([2020, 2022, 2023]);
+    expect(chips.find((c) => c.isPresent)?.year).toBe(2023);
+    expect(chips.find((c) => c.selected)?.year).toBe(2023);
+  });
+
+  it('selects the lens year while the lens is on', () => {
+    const chips = yearChips({ state: { ...base, timeOn: true, year: 2020 }, yearsKnown: true });
+    expect(chips.find((c) => c.selected)?.year).toBe(2020);
+  });
+
+  it('is empty on the table, before years are known, or with one year', () => {
+    expect(yearChips({ state: { ...base, mode: 'table' }, yearsKnown: true })).toEqual([]);
+    expect(yearChips({ state: base, yearsKnown: false })).toEqual([]);
+    expect(yearChips({ state: { ...base, years: [2023] }, yearsKnown: true })).toEqual([]);
+  });
+
+  it('click: present year turns the lens off, others open it if needed and go there', () => {
+    const [a, , c] = yearChips({ state: base, yearsKnown: true });
+    expect(yearChipAction(c, true)).toEqual({ kind: 'toggleOff' });
+    expect(yearChipAction(a, false)).toEqual({ kind: 'goto', year: 2020, openLens: true });
+    expect(yearChipAction(a, true)).toEqual({ kind: 'goto', year: 2020, openLens: false });
   });
 });

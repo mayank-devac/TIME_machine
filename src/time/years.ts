@@ -1,9 +1,7 @@
 /**
  * Year ladder: the list of years the dial can stop at. Pure, no allocation after building.
  *
- * The ladder holds every year that has a panorama here EXCEPT the one on screen (the lens
- * always shows a different year), plus "archive stops" below the earliest panorama year.
- * Archive stops have no panorama: they are Track F's cue to show old photos.
+ * The ladder holds only years that have a panorama here, EXCEPT the one on screen.
  */
 
 /** Ascending, de-duplicated copy. */
@@ -12,24 +10,19 @@ export function sortedYears(years: Iterable<number>): number[] {
 }
 
 /**
- * Stops below the earliest panorama year, ascending: decades down to `floor`, then the year
- * just before `earliest`. Example: earliest 2016, floor 1990 gives [1990, 2000, 2010, 2015].
+ * Every year the dial can stop at, ascending: each year that has a panorama here, except the
+ * one on screen (the lens always shows a different year). No invented years: the dial only
+ * visits what the imagery source actually returned.
  */
-export function archiveStops(earliest: number, floor: number): number[] {
-  const stops: number[] = [];
-  const top = earliest - 1;
-  if (top < floor) return stops;
-  for (let y = Math.ceil(floor / 10) * 10; y < top; y += 10) stops.push(y);
-  stops.push(top);
-  return stops;
+export function buildLadder(panoYears: readonly number[], currentYear: number | null): number[] {
+  return sortedYears(panoYears).filter((y) => y !== currentYear);
 }
 
-/** Every year the dial can stop at, ascending. */
-export function buildLadder(panoYears: readonly number[], currentYear: number | null, floor: number): number[] {
-  const years = sortedYears(panoYears);
-  if (years.length === 0) return [];
-  const others = years.filter((y) => y !== currentYear);
-  return [...archiveStops(years[0], floor), ...others];
+/** Message for a dial push past either end of the ladder. */
+export function limitMessage(direction: 'earlier' | 'later', edgeYear: number): string {
+  return direction === 'earlier'
+    ? `No earlier imagery here. Earliest is ${edgeYear}.`
+    : `No later imagery here. Latest is ${edgeYear}.`;
 }
 
 /**

@@ -44,8 +44,13 @@ function labelTexture(text: string, bg: string, fg: string): CanvasTexture {
   g.beginPath();
   g.roundRect(0, 0, canvas.width, canvas.height, r);
   g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.45)';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.roundRect(2, 2, canvas.width - 4, canvas.height - 4, r);
+  g.stroke();
   g.fillStyle = fg;
-  g.font = `600 ${Math.round(canvas.height * 0.42)}px system-ui, sans-serif`;
+  g.font = `500 ${Math.round(canvas.height * 0.4)}px system-ui, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
@@ -109,7 +114,7 @@ export class PortalWindow {
       bevelSegments: 2,
     });
     frameGeo.translate(0, 0, -FRAME_DEPTH_M / 2);
-    const frameMat = new MeshBasicMaterial({ color: 0xc9a36a });
+    const frameMat = new MeshBasicMaterial({ color: 0xdfe6ff });
     this.root = new Mesh(frameGeo, frameMat);
     this.root.name = 'PortalFrame';
 
@@ -131,8 +136,8 @@ export class PortalWindow {
     this.root.add(this.mask);
 
     const buttonGeo = new PlaneGeometry(BUTTON_W_M, BUTTON_H_M);
-    const enterTex = labelTexture('STEP IN', '#2f9e6a', '#ffffff');
-    const exitTex = labelTexture('BACK TO ROOM', '#2b2f36', '#ffffff');
+    const enterTex = labelTexture('STEP IN', 'rgba(46,230,214,0.35)', '#e6fffc');
+    const exitTex = labelTexture('BACK TO ROOM', 'rgba(255,255,255,0.18)', '#ffffff');
     this.enterButton = new Mesh(buttonGeo, new MeshBasicMaterial({ map: enterTex, transparent: true }));
     this.exitButton = new Mesh(buttonGeo, new MeshBasicMaterial({ map: exitTex, transparent: true }));
     this.enterButton.name = 'PortalEnterButton';

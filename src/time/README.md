@@ -21,19 +21,19 @@ Entry: `createTrack` in `entry.ts`. Everything here talks to the rest of the app
   (`dial-visual.ts`) floats above the dial hand with the year and the stops either side.
   Either thumbstick flicked left or right also steps a year. Desktop: mouse wheel, arrow keys
   or `[` and `]`.
-- **Year ladder.** The stops are every year with a panorama here except the one on screen,
-  plus "archive stops" below the earliest one (decades down to 1900, then the year just
-  before the earliest). Archive stops have no panorama: the lens shows the present with a dim
-  blue rim and `time:yearChanged` is Track F's cue.
+- **Year ladder.** The stops are only the years the imagery source returned for this spot,
+  except the one on screen. No invented years. Dialling past the first or last stop does
+  nothing and emits a recoverable `error` ("No earlier imagery here. Earliest is 2020."),
+  at most once per 2 s, which the UI shows as a toast. `time:yearRequested` (the year panel)
+  jumps the dial straight to a listed year.
 - **Push-through.** Hold a pinch or the trigger on the lens hand (Space on desktop) for 300 ms
   and the lens grows to cover the whole view in `config.lens.pushThroughMs`; then
   `stage.commitPast()` runs and `time:committed` is emitted. Letting go early shrinks it back.
-  It only starts once the past panorama for the dialled year has loaded, and never on an
-  archive stop.
+  It only starts once the past panorama for the dialled year has loaded.
 
 ## Events
 
-Listens: `pano:shown`, `time:toggled`, `mode:changed`.
+Listens: `pano:shown`, `time:toggled`, `time:yearRequested`, `mode:changed`.
 Emits: `time:yearsKnown` (after every `pano:shown`), `time:yearChanged`, `time:committed`,
 `loading` (scope `time`), `error` (source `time`).
 

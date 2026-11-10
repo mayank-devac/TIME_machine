@@ -45,14 +45,68 @@ import {
 } from './geo.js';
 import { RedrawScheduler } from './redraw.js';
 
-export const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 export const MAPILLARY_TILES = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}';
-export const MAP_CREDIT = '© OpenStreetMap contributors  ·  OpenFreeMap  ·  Coverage © Mapillary';
+export type BaseMapKind = 'satellite' | 'dark' | 'light';
+export const BASE_MAP_KINDS: ReadonlyArray<{ id: BaseMapKind; label: string }> = [
+  { id: 'satellite', label: 'Satellite' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'light', label: 'Light' },
+];
+const KIND_STORAGE_KEY = 'tm-base-map';
+const BUILDINGS_STORAGE_KEY = 'tm-buildings-3d';
+
+/** Rim credit line; names the imagery provider only when satellite imagery is showing. */
+export function mapCredit(kind: BaseMapKind, buildings3d = false): string {
+  const base =
+    kind === 'satellite'
+      ? 'Imagery © Esri, Maxar, Earthstar Geographics'
+      : 'Map © Esri, HERE, Garmin, OpenStreetMap contributors';
+  const bld = buildings3d ? '  ·  Buildings © OpenStreetMap contributors, OpenFreeMap' : '';
+  return `${base}${bld}  ·  Coverage © Mapillary`;
+}
+
+/** Camera tilt used by the 3D buildings view, degrees. Kept under ~70 so no horizon or sky shows on the table. */
+export const PITCH_3D = 55;
+const BUILDINGS_LAYER = 'tm-buildings';
+
+/**
+ * Base maps are plain raster tile layers. MapLibre only composes them with the Mapillary
+ * coverage; no vector basemap is used because OpenFreeMap's ~400 KB vector tiles stalled in the
+ * managed browser, leaving the table with no roads or water. Rasters are small and always load.
+ */
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+const esriTiles = (service: string): string[] => [`${ESRI}/${service}/MapServer/tile/{z}/{y}/{x}`];
+
+export function buildBaseStyle(kind: BaseMapKind): StyleSpecification {
+  const sources: StyleSpecification['sources'] = {};
+  const layers: LayerSpecification[] = [
+    { id: 'background', type: 'background', paint: { 'background-color': '#10131f' } },
+  ];
+  const raster = (id: string, service: string, maxzoom: number, attribution?: string): void => {
+    sources[id] = { type: 'raster', tiles: esriTiles(service), tileSize: 256, maxzoom, attribution };
+    layers.push({ id, type: 'raster', source: id });
+  };
+  if (kind === 'satellite') {
+    raster('base', 'World_Imagery', 19, 'Imagery © Esri, Maxar, Earthstar Geographics');
+    raster('base-labels', 'Reference/World_Boundaries_and_Places', 19);
+  } else if (kind === 'dark') {
+    raster('base', 'Canvas/World_Dark_Gray_Base', 16, 'Map © Esri, HERE, Garmin, OpenStreetMap contributors');
+    raster('base-labels', 'Canvas/World_Dark_Gray_Reference', 16);
+  } else {
+    raster('base', 'World_Street_Map', 19, 'Map © Esri, HERE, Garmin, OpenStreetMap contributors');
+  }
+  return {
+    version: 8,
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources,
+    layers,
+  };
+}
 const COVERAGE_LAYER = 'mly-pano-sequences';
 /** How far from a coverage line a tap still snaps to it, canvas pixels (about 2 cm on the table). */
 const SNAP_PX = 48;
 /** Distance of the table centre in front of the standing player, metres (north is -Z). */
-const TABLE_Z = -0.62;
+const TABLE_Z = -1.15;
 /** Stop pending-tile redraws when MapLibre has reported no new data for this long, ms. */
 const PENDING_QUIET_MS = 3000;
 
@@ -87,6 +141,24 @@ interface ActivePointer {
   t0: number;
 }
 
+function readStoredKind(): BaseMapKind {
+  try {
+    const v = localStorage.getItem(KIND_STORAGE_KEY);
+    if (v === 'satellite' || v === 'dark' || v === 'light') return v;
+  } catch {
+    /* storage may be unavailable */
+  }
+  return 'satellite';
+}
+
+function readStored3D(): boolean {
+  try {
+    return localStorage.getItem(BUILDINGS_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export class TableMap implements MapTable {
   readonly root = new Group();
   readonly view: MapView;
@@ -98,6 +170,10 @@ export class TableMap implements MapTable {
   private readonly mapMaterial = new MeshBasicMaterial({ color: 0x2a2f36, toneMapped: false });
   private readonly mapMesh: Mesh;
   private readonly entities: Entity[] = [];
+  private baseKind: BaseMapKind = readStoredKind();
+  private buildings3d = readStored3D();
+  private creditMesh: Mesh | null = null;
+  private lastPick: { lat: number; lng: number } | null = null;
   private readonly scheduler = new RedrawScheduler();
   private readonly offs: Array<() => void> = [];
   private readonly pointers = new Map<number, ActivePointer>();
@@ -139,7 +215,7 @@ export class TableMap implements MapTable {
 
     const slab = new Mesh(
       new BoxGeometry(this.size + 0.06, 0.04, this.size + 0.14),
-      new MeshBasicMaterial({ color: 0x1b1f24 }),
+      new MeshBasicMaterial({ color: 0x8fa0d8, transparent: true, opacity: 0.22, depthWrite: false }),
     );
     slab.position.y = -0.0205;
     this.root.add(slab);
@@ -150,9 +226,9 @@ export class TableMap implements MapTable {
     this.mapMesh.position.y = 0.001;
     this.mapMesh.onBeforeRender = () => this.tick();
 
-    this.root.add(this.textStrip(MAP_CREDIT, this.size / 2 + 0.035, 'rgba(255,255,255,0.78)', 26));
+    this.rebuildCredit();
     this.root.add(
-      this.textStrip('Drag to pan  ·  two hands to zoom  ·  tap a green street', -(this.size / 2 + 0.035), '#9fe8bd', 28),
+      this.textStrip('Drag to pan  ·  two hands to zoom  ·  tap a glowing street', -(this.size / 2 + 0.035), '#7ff5ea', 28),
     );
 
     const rootEntity = world.createTransformEntity(this.root, { persistent: true });
@@ -209,6 +285,7 @@ export class TableMap implements MapTable {
   private pendingSpots: SpotsData = { type: 'FeatureCollection', features: [] };
 
   private markPick(lat: number, lng: number): void {
+    this.lastPick = { lat, lng };
     const src = this.map?.getSource('tm-pick') as GeoJSONSource | undefined;
     src?.setData({ type: 'Point', coordinates: [lng, lat] });
     this.scheduler.markDirty();
@@ -274,7 +351,15 @@ export class TableMap implements MapTable {
         const parts: number[][][] =
           g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
         for (const part of parts) {
-          lines.push(part.map((c) => latLngToPixel(this.view, c[1], c[0], this.px)));
+          lines.push(
+            part.map((c) => {
+              if (this.buildings3d) {
+                const p = m.project([c[0], c[1]]);
+                return { x: p.x, y: p.y };
+              }
+              return latLngToPixel(this.view, c[1], c[0], this.px);
+            }),
+          );
         }
       }
       const snap = nearestOnPolylines(px, py, lines, SNAP_PX);
@@ -282,7 +367,7 @@ export class TableMap implements MapTable {
         this.log('pick-miss', { px, py, features: feats.length });
         this.bus.emit('error', {
           source: 'map',
-          message: 'No 360° imagery there. Tap a green street.',
+          message: 'No 360° imagery there. Tap a glowing street.',
           recoverable: true,
         });
         return null;
@@ -300,8 +385,67 @@ export class TableMap implements MapTable {
 
   /** Pan by canvas pixels, as a drag does. Exposed for the dev driver. */
   panPixels(dx: number, dy: number): void {
-    panByPixels(this.view, dx, dy);
+    this.panBy(null, dx, dy);
+  }
+
+  /**
+   * Drag by (dx, dy) canvas pixels ending at (x, y). Flat view: plain Mercator maths. Tilted view
+   * (3D): ask MapLibre which ground point was under the old and the new pixel, so the ground
+   * follows the pointer despite the perspective.
+   */
+  private panBy(end: Pixel | null, dx: number, dy: number): void {
+    const m = this.map;
+    if (this.buildings3d && m) {
+      const ex = end ? end.x : this.px / 2 + dx;
+      const ey = end ? end.y : this.px / 2 + dy;
+      const from = m.unproject([ex - dx, ey - dy]);
+      const to = m.unproject([ex, ey]);
+      this.view.lat = Math.max(-85, Math.min(85, this.view.lat + (from.lat - to.lat)));
+      this.view.lng += from.lng - to.lng;
+    } else {
+      panByPixels(this.view, dx, dy);
+    }
     this.applyView();
+  }
+
+  /** Zoom to `z` keeping the ground under canvas pixel (ax, ay) fixed, flat or tilted. */
+  private zoomAt(ax: number, ay: number, z: number): void {
+    const m = this.map;
+    if (this.buildings3d && m) {
+      const before = m.unproject([ax, ay]);
+      this.view.zoom = clampZoom(z);
+      m.jumpTo({ zoom: this.view.zoom });
+      const after = m.unproject([ax, ay]);
+      this.view.lat = Math.max(-85, Math.min(85, this.view.lat + (before.lat - after.lat)));
+      this.view.lng += before.lng - after.lng;
+      this.applyView();
+    } else {
+      zoomAround(this.view, ax, ay, z, this.px);
+      this.applyView();
+    }
+  }
+
+  /** 3D buildings and a tilted camera. Off by default; remembered between visits. */
+  set3D(on: boolean): void {
+    if (on === this.buildings3d) return;
+    this.buildings3d = on;
+    try {
+      localStorage.setItem(BUILDINGS_STORAGE_KEY, on ? '1' : '0');
+    } catch {
+      /* storage may be unavailable */
+    }
+    this.rebuildCredit();
+    const map = this.map;
+    if (map) {
+      if (map.getLayer(BUILDINGS_LAYER)) map.setLayoutProperty(BUILDINGS_LAYER, 'visibility', on ? 'visible' : 'none');
+      // A jump, never an animated tilt: moving the picture smoothly is a comfort risk.
+      map.jumpTo({ pitch: on ? PITCH_3D : 0, bearing: 0 });
+    }
+    this.scheduler.markDirty();
+  }
+
+  get3D(): boolean {
+    return this.buildings3d;
   }
 
   dispose(): void {
@@ -321,16 +465,8 @@ export class TableMap implements MapTable {
   // --- MapLibre ----------------------------------------------------------------------------------
 
   private async createMap(): Promise<void> {
-    let style: StyleSpecification;
-    try {
-      const resp = await fetch(STYLE_URL);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      style = (await resp.json()) as StyleSpecification;
-    } catch (err) {
-      this.fail(`Map style could not load (${String(err)}).`);
-      return;
-    }
     if (this.disposed) return;
+    const style = buildBaseStyle(this.baseKind);
     this.addOverlays(style);
 
     const map = new maplibregl.Map({
@@ -338,6 +474,9 @@ export class TableMap implements MapTable {
       style,
       center: [this.view.lng, this.view.lat],
       zoom: this.view.zoom,
+      pitch: this.buildings3d ? PITCH_3D : 0,
+      bearing: 0,
+      maxPitch: 60,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       interactive: false,
@@ -366,7 +505,6 @@ export class TableMap implements MapTable {
       if (!this.inRedraw) this.selfRendered = true;
     });
     map.once('load', () => this.log('map-load', this.stats()));
-
     const tex = new CanvasTexture(map.getCanvas());
     tex.colorSpace = SRGBColorSpace;
     tex.minFilter = LinearMipmapLinearFilter;
@@ -402,7 +540,7 @@ export class TableMap implements MapTable {
         filter: ['==', ['get', 'is_pano'], true],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#05cb63',
+          'line-color': '#19d3c5',
           'line-opacity': 0.9,
           'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 15, 5, 18, 9],
         },
@@ -410,6 +548,28 @@ export class TableMap implements MapTable {
     } else {
       this.fail('No Mapillary token, so the map cannot show where street imagery exists.');
     }
+    // 3D buildings: OpenFreeMap vector tiles (OpenStreetMap data), extruded. The source is only
+    // requested while the layer is visible, so flat mode costs nothing extra.
+    style.sources['tm-buildings'] = {
+      type: 'vector',
+      url: 'https://tiles.openfreemap.org/planet',
+      attribution: '© OpenStreetMap contributors, OpenFreeMap',
+    };
+    layers.splice(insertAt, 0, {
+      id: BUILDINGS_LAYER,
+      type: 'fill-extrusion',
+      source: 'tm-buildings',
+      'source-layer': 'building',
+      minzoom: 14,
+      layout: { visibility: this.buildings3d ? 'visible' : 'none' },
+      paint: {
+        'fill-extrusion-color': '#c9c3f2',
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': 0.88,
+        'fill-extrusion-vertical-gradient': true,
+      },
+    });
     style.sources['tm-spots'] = { type: 'geojson', data: this.pendingSpots };
     style.sources['tm-pick'] = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } };
     layers.push(
@@ -419,8 +579,8 @@ export class TableMap implements MapTable {
         source: 'tm-spots',
         paint: {
           'circle-radius': 14,
-          'circle-color': '#ffb020',
-          'circle-stroke-color': '#1b1f24',
+          'circle-color': '#7c6cff',
+          'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 4,
         },
       },
@@ -435,7 +595,7 @@ export class TableMap implements MapTable {
           'text-offset': [0, 1.2],
           'text-anchor': 'top',
         },
-        paint: { 'text-color': '#1b1f24', 'text-halo-color': '#ffffff', 'text-halo-width': 3 },
+        paint: { 'text-color': '#2a2350', 'text-halo-color': '#ffffff', 'text-halo-width': 3 },
       },
       {
         id: 'tm-pick',
@@ -444,7 +604,7 @@ export class TableMap implements MapTable {
         paint: {
           'circle-radius': 18,
           'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': '#ff3d7f',
+          'circle-stroke-color': '#ff5fb5',
           'circle-stroke-width': 6,
         },
       },
@@ -452,8 +612,51 @@ export class TableMap implements MapTable {
     style.layers = layers;
   }
 
+  /** Switch the table's base map (satellite, dark or light). Keeps the view, spots and pick marker. */
+  setBaseMap(kind: BaseMapKind): void {
+    if (kind === this.baseKind) return;
+    this.baseKind = kind;
+    try {
+      localStorage.setItem(KIND_STORAGE_KEY, kind);
+    } catch {
+      /* storage may be unavailable */
+    }
+    this.rebuildCredit();
+    const map = this.map;
+    if (!map) return;
+    const style = buildBaseStyle(kind);
+    this.addOverlays(style);
+    map.once('style.load', () => {
+      if (this.lastPick) this.markPick(this.lastPick.lat, this.lastPick.lng);
+      this.scheduler.markDirty();
+    });
+    map.setStyle(style);
+    this.scheduler.markDirty();
+  }
+
+  getBaseMap(): BaseMapKind {
+    return this.baseKind;
+  }
+
+  private rebuildCredit(): void {
+    if (this.creditMesh) {
+      this.root.remove(this.creditMesh);
+      this.creditMesh.geometry.dispose();
+      const m = this.creditMesh.material as MeshBasicMaterial;
+      m.map?.dispose();
+      m.dispose();
+    }
+    this.creditMesh = this.textStrip(mapCredit(this.baseKind, this.buildings3d),this.size / 2 + 0.035, 'rgba(255,255,255,0.8)', 26);
+    this.root.add(this.creditMesh);
+  }
+
   private applyView(): void {
-    this.map?.jumpTo({ center: [this.view.lng, this.view.lat], zoom: this.view.zoom });
+    this.map?.jumpTo({
+      center: [this.view.lng, this.view.lat],
+      zoom: this.view.zoom,
+      pitch: this.buildings3d ? PITCH_3D : 0,
+      bearing: 0,
+    });
     this.scheduler.markDirty();
   }
 
@@ -535,8 +738,7 @@ export class TableMap implements MapTable {
       ptr.x = p.x;
       ptr.y = p.y;
       if (this.pointers.size === 1) {
-        panByPixels(this.view, dx, dy);
-        this.applyView();
+        this.panBy(p, dx, dy);
       } else if (this.gesture.active) {
         this.updateGesture();
       }
@@ -568,8 +770,7 @@ export class TableMap implements MapTable {
     const onWheel = (e: { point: Vector3; deltaY: number }) => {
       if (!this.visible) return;
       const p = this.hitToPixel(e.point);
-      zoomAround(this.view, p.x, p.y, wheelZoom(this.view.zoom, e.deltaY), this.px);
-      this.applyView();
+      this.zoomAt(p.x, p.y, wheelZoom(this.view.zoom, e.deltaY));
     };
     mesh.addEventListener('pointerdown', onDown);
     mesh.addEventListener('pointermove', onMove);
@@ -615,11 +816,12 @@ export class TableMap implements MapTable {
     const midX = (a.x + b.x) / 2;
     const midY = (a.y + b.y) / 2;
     const z = pinchZoom(g.startZoom, g.startDist, Math.hypot(a.x - b.x, a.y - b.y));
-    zoomAround(this.view, midX, midY, z, this.px);
-    panByPixels(this.view, midX - g.midX, midY - g.midY);
+    this.zoomAt(midX, midY, z);
+    this.tmpPixel.x = midX;
+    this.tmpPixel.y = midY;
+    this.panBy(this.tmpPixel, midX - g.midX, midY - g.midY);
     g.midX = midX;
     g.midY = midY;
-    this.applyView();
   }
 
   /** Controller fallback: right thumbstick up zooms in, down zooms out. */
@@ -632,8 +834,7 @@ export class TableMap implements MapTable {
       if (Math.abs(y) < 0.25) return;
       const z = clampZoom(this.view.zoom - y * delta * 1.5);
       if (z === this.view.zoom) return;
-      zoomAround(this.view, this.px / 2, this.px / 2, z, this.px);
-      this.applyView();
+      this.zoomAt(this.px / 2, this.px / 2, z);
     });
     this.offs.push(off);
   }

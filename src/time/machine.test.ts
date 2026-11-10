@@ -10,7 +10,6 @@ const tuning: LensTuning = {
   pushHoldMs: 300,
   retractSpeed: 2,
   closeMs: 250,
-  archiveFloorYear: 2000,
 };
 
 const YEARS = [2019, 2023, 2025];
@@ -89,15 +88,17 @@ describe('lens state machine', () => {
     expect(m.year).toBe(2019);
     expect(m.pastReady).toBe(false); // a new panorama must load first
     expect(m.yearHasPano).toBe(true);
-    expect(m.step(-1)).toBe(true);
-    expect(m.year).toBe(2018); // below the earliest Mapillary year: archive stop
-    expect(m.yearHasPano).toBe(false);
-    expect(m.step(-99)).toBe(true);
-    expect(m.year).toBe(2000);
-    expect(m.step(-1)).toBe(false); // clamped at the floor
+    expect(m.step(-1)).toBe(false); // 2019 is the earliest year with imagery
+    expect(m.blocked).toEqual({ direction: 'earlier', edgeYear: 2019 });
     expect(m.step(+99)).toBe(true);
     expect(m.year).toBe(2023);
+    expect(m.blocked).toBeNull();
     expect(m.step(+1)).toBe(false); // 2025 is on screen, not on the dial
+    expect(m.blocked).toEqual({ direction: 'later', edgeYear: 2023 });
+    expect(m.jumpTo(2019)).toBe(true);
+    expect(m.year).toBe(2019);
+    expect(m.jumpTo(2018)).toBe(false); // not a year with imagery
+    expect(m.jumpTo(2025)).toBe(false); // the year on screen
     run(m, 32, false, false);
     expect(m.phase).toBe('open');
   });
@@ -153,17 +154,13 @@ describe('lens state machine', () => {
     expect(m.radius).toBe(0.25);
   });
 
-  it('will not push before the past is loaded, on an archive year, or while dialling', () => {
+  it('will not push before the past is loaded or while dialling', () => {
     const m = openMachine();
     m.pastReady = false;
     run(m, 600, true);
     expect(m.phase).toBe('open');
     m.pastReady = true;
-    m.step(-2); // 2018: archive stop
-    m.pastReady = true;
-    run(m, 600, true);
-    expect(m.phase).toBe('open');
-    m.step(+1); // 2019
+    m.step(-1); // 2019
     m.pastReady = true;
     run(m, 600, true, true);
     expect(m.phase).toBe('dialling');
@@ -205,6 +202,6 @@ describe('lens state machine', () => {
     m.setYears(YEARS, 2019);
     expect(m.toggle(true)).toBe(true);
     expect(m.year).toBe(2023);
-    expect(m.years).toEqual([2000, 2010, 2018, 2023, 2025]);
+    expect(m.years).toEqual([2023, 2025]);
   });
 });

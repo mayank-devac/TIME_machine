@@ -74,9 +74,12 @@ export function drawFrame(photo: ArchivePhoto, image: CanvasImageSource, iw: num
   canvas.width = CANVAS_W;
   canvas.height = PAD + photoH + CAPTION_H;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#f4ecd8'; // warm paper mat
+  ctx.fillStyle = 'rgba(15,18,28,0.82)'; // dark glass card
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#1a1510';
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.fillRect(PAD - 6, PAD - 6, photoW + 12, photoH + 12);
   // cover-fit the image into the photo box
   const scale = Math.max(photoW / iw, photoH / ih);
@@ -91,14 +94,14 @@ export function drawFrame(photo: ArchivePhoto, image: CanvasImageSource, iw: num
 
   const top = PAD + photoH;
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#7a1f12';
-  ctx.font = 'bold 76px Georgia, serif';
+  ctx.fillStyle = '#ffb84d';
+  ctx.font = '300 76px system-ui, sans-serif';
   ctx.fillText(String(photo.year), PAD, top + 76);
-  ctx.fillStyle = '#1a1510';
-  ctx.font = '30px Georgia, serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '500 30px system-ui, sans-serif';
   ctx.fillText(ellipsize(ctx, photo.title, photoW - 230), PAD + 200, top + 62);
-  ctx.font = '26px Arial, sans-serif';
-  ctx.fillStyle = '#3a342b';
+  ctx.font = '26px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
   const credit = `Photo: ${photo.creator} · ${photo.license} · Wikimedia Commons`;
   wrapLines(ctx, credit, photoW, 2).forEach((l, i) => ctx.fillText(l, PAD, top + 118 + i * 34));
   return canvas;
