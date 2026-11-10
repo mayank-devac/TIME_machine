@@ -1,7 +1,7 @@
 import {
-  AlwaysStencilFunc,
   BackSide,
   EqualStencilFunc,
+  KeepStencilOp,
   Mesh,
   MathUtils,
   Object3D,
@@ -150,11 +150,16 @@ export class MockPanoStage implements PanoStage {
     m.uniforms.uTime.value = l.time;
     if (this.stencilRef === null) {
       m.stencilWrite = false;
-      m.stencilFunc = AlwaysStencilFunc;
     } else {
-      m.stencilWrite = false;
+      // In three.js, stencilWrite is what ENABLES the stencil test. Mask 0 = never modify the buffer.
+      m.stencilWrite = true;
+      m.stencilWriteMask = 0x00;
       m.stencilFunc = EqualStencilFunc;
       m.stencilRef = this.stencilRef;
+      m.stencilFuncMask = 0xff;
+      m.stencilFail = KeepStencilOp;
+      m.stencilZFail = KeepStencilOp;
+      m.stencilZPass = KeepStencilOp;
     }
   }
 
