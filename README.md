@@ -1,45 +1,80 @@
-# IWSDK App
+# Street View Time Machine
 
-This project uses `iwsdk.config.json` for declarative scene, asset, component,
-XR, and emulator configuration. Application systems remain explicit in
-`src/index.ts`.
+A WebXR app built with [IWSDK](https://iwsdk.dev). Stand at a street spot and
+travel through its past: 360° panoramas are fetched from
+[Mapillary](https://www.mapillary.com), placed on an immersive sphere, and a
+wristside time dial lets you hop between the years that spot was captured. In AR
+you can open a portal and step through it; in desktop mode a 3D map table does
+the same job with mouse input.
+
+## Run it
 
 ```sh
 npm install
 npm run dev
 ```
 
-Use the Runtime and Editor controls in the managed browser to switch between
-the running experience and its authored scene.
+`npm run dev` starts the CLI-managed Vite server and a managed browser. Use the
+Runtime / Editor toggle in that window to switch between the running experience
+and the authored scene; IWER (the in-browser XR emulator) boots as a Meta Quest 3
+in a sunlit living room per `iwsdk.config.json`.
 
-## Starter content
+## Scripts
 
-The robot and welcome panel are small examples of authored scene content plus
-runtime systems. The robot turns toward the player's head and plays a sound
-when pressed. To remove the robot, delete its scene node, its `RobotSystem`
-registration from `src/index.ts` or `src/index.js`, and its `Robot` registration
-from `src/components.ts` or `src/components.js`; you can then delete the unused
-robot component and system files. To remove the welcome panel, delete its scene
-node and its `PanelSystem` registration from the application entry point.
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Managed dev server + browser (the normal loop) |
+| `npm run dev:runtime` | Plain `vite` without the managed browser |
+| `npm run dev:down` / `dev:status` | Stop / inspect the managed server |
+| `npm run typecheck` | `tsc --noEmit` — run before testing anything |
+| `npm run build` / `preview` | Production build / serve it |
+| `npm test` | Vitest suites (per-track logic tests) |
+| `npm run reference:status` / `reference:warmup` | Check / warm the `@iwsdk/reference` docs index |
 
-The robot stands on the second of three numbered stations. The first holds dark
-pieces you can grab and move, and the third holds a ring you can spin in place.
-The studio props (the plinths and the dark pieces, plus the floor and stage in VR
-and Desktop 3D) are built in code in `src/scene-assets/studio.scene-asset.ts` or
-`.js`. The VR and Desktop 3D background furniture is built the same way in
-`src/scene-assets/decor.scene-asset.ts` or `.js`, so the starter downloads no
-extra models. To remove any of them, delete their scene nodes and their entries
-in `src/assets.ts` or `src/assets.js`, then delete the files you no longer use.
-The station labels are `public/ui/label-*.uikitml`.
+## How it works
 
-The rest of the look is built-in components in the scene, which you can edit in
-the editor without code. The soft light on every object is the scene root's
-`IBLGradient` (select the Level Root to edit it), and the soft shadows under
-each object are `ContactShadow` nodes. In VR and Desktop 3D, the sky is the
-scene root's `DomeGradient` (its colors, tilt and dither are also on the Level
-Root), and the floor fades into it through the `DomeFade` on the floor node. AR
-projects have no sky or floor, so passthrough stays visible, and a
-`ShadowCatcher` node grounds the stations.
+`iwsdk.config.json` is the project authority: it selects
+`public/scenes/main.iwsdk.scene.json`, the asset and component modules, AR mode
+with hand tracking, Horizon spatial UI, and emulator defaults.
+`src/index.ts` creates the `World` from the virtual project options, then wires
+the app as six tracks around an EventBus (`src/contracts.ts`):
 
-- Minimal scene walkthrough: https://iwsdk.dev/guides/01b-minimal-scene.html
-- XR-enabled projects — IWER emulator controls: https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls
+| Track | Job |
+| --- | --- |
+| `src/data` | `PanoSource` — Mapillary client with year grouping, throttling, caching; falls back to a mock without `VITE_MAPILLARY_TOKEN` |
+| `src/pano` | The pano sphere, shader stage, load/dispose lifecycle, street arrows |
+| `src/map` | 3D map table (MapLibre), spot search, the landing/search UI |
+| `src/time` | The time dial, year ribbon, lens and push-through time travel |
+| `src/portal` | The AR portal you grab and step through |
+| `src/archive` | Archive windows into past imagery |
+| `src/ui` | HUD panels, search logic, voice |
+
+`src/flow.ts` is the orchestrator glue: a map pick resolves the nearest pano and
+turns the mode change; tracks only emit/observe events, never call each other.
+
+## Setup
+
+- Node ≥ 20.19 (see `engines` in `package.json`).
+- Mapillary token in `.env.local` as `VITE_MAPILLARY_TOKEN`. Without it the app
+  still starts on mock data.
+- Curated spots live in `src/data/spots.json` with 3+ capture years each;
+  regenerate with `node src/data/build-spots.mjs`.
+
+Per-track details sit in `src/<track>/README.md`, and `AGENTS.md` documents the
+IWSDK conventions this repo follows (ECS components, asset manifest contract,
+testing workflow).
+
+## Testing on a headset
+
+Run `npm run dev`, then open a URL from `data.runtimeUrls.network` (`npm run
+dev:status`) on a headset on the same Wi-Fi network and accept the local
+certificate warning. See
+[testing your experience](https://iwsdk.dev/guides/02-testing-experience.html)
+for the complete workflow, and the IWER
+[emulator controls](https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls)
+for desktop keys.
+
+## Links
+
+- [Minimal scene walkthrough](https://iwsdk.dev/guides/01b-minimal-scene.html)
+- [IWSDK guides](https://iwsdk.dev/guides/)

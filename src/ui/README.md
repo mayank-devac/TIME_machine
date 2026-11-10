@@ -1,6 +1,6 @@
 # Track G: UI (HUD)
 
-Five world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), created by
+Nine world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), created by
 `entry.ts` with `world.assets.instantiate(<manifest id>)` and
 `world.createTransformEntity(panel, { persistent: true })`, each tagged `HudTag { slot }`.
 
@@ -11,6 +11,10 @@ Five world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), cr
 | time | `hud-time-button` | mode `street` or `portal`; greyed unless years >= 2 |
 | year | `hud-year-label` | mode `street` or `portal`; present year (glass pill) with the clickable year chips under it, no backing panel |
 | portal | `hud-portal-button` | mode `street` (PORTAL) or `portal` (BACK) |
+| places | `hud-places` | mode `table` or `street`; paginated list of spots with past imagery — near the map view in the room, near the pano you stand on in street |
+| search | `hud-search` | mode `table` only |
+| map | `hud-map-button` | mode `street` or `portal`; requests the table |
+| info | `hud-info-button` | toggles the info card (visible at start) |
 
 Status priority: error toast, then loading spinner, then "No earlier imagery here".
 
@@ -27,10 +31,13 @@ Panels never follow the head. `recentre()` hard-snaps all five to the head's pos
 yaw (credits 1.5 m ahead, 0.75 m below the eye line; button 32 degrees left, year and portal 32
 degrees right). It runs once at start, on every `mode:changed`, 0.7 s after an XR session
 starts, and when the user presses `C` on desktop. `Track.recentre()` is also exposed.
-Pure maths is in `hud-logic.ts` (`SLOTS`, `slotPosition`).
+Pure maths is in `hud-logic.ts` (`SLOTS`, `slotSpec`, `slotPosition`; `slotSpec` returns the
+raised `STREET_PLACES_SLOT` for the places panel while a pano is live — the street button band
+(time/portal/map) sits too close to the panel otherwise).
 
 ## Input
-Only the time and portal panels carry `RayInteractable`. Clicks reach the UIKit elements from
+Only the interactive panels carry `RayInteractable` — `time`, `portal`, `info`, `year`,
+`places`, `map`, `search`. Clicks reach the UIKit elements from
 XR rays and from desktop canvas pointer events (`canvasPointerEvents` is on).
 
 ## Files

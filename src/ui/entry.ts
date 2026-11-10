@@ -19,6 +19,8 @@ import { createVoiceInput } from './voice.js';
 import {
   BusyScopes,
   SLOTS,
+  slotSpec,
+  STREET_PLACE_MIN_OFFSET_M,
   ToastQueue,
   composeCredits,
   MAX_YEAR_CHIPS,
@@ -121,8 +123,9 @@ export const createTrack: TrackFactory = async (ctx) => {
     camera.getWorldQuaternion(headQuat);
     fwd.set(0, 0, -1).applyQuaternion(headQuat);
     const yaw = yawFromForward(fwd.x, fwd.z);
+    const mode = state.get().mode;
     for (const [slot, panel] of panels) {
-      slotPosition(head, yaw, SLOTS[slot], pos);
+      slotPosition(head, yaw, slotSpec(slot, mode), pos);
       panel.object.position.set(pos.x, pos.y, pos.z);
       // Single-sided panels face +Z; lookAt on a non-camera points +Z at the target.
       panel.object.lookAt(head);
@@ -223,12 +226,21 @@ export const createTrack: TrackFactory = async (ctx) => {
     text('places', 'places-page')?.setProperties({ text: placesView.pageText });
   };
 
-  /** Look up places around the map view. The newest request wins; failures leave the list empty. */
-  const loadPlaces = async (lat: number, lng: number, zoom: number): Promise<void> => {
+  // Places list: rooms look around the map view; street with a live pano looks around the player.
+  // Trims by the lookup kind (street sets no zoom), not the current mode, so a lookup that
+  // finishes during the table→street transition still loses the spot-the-player-stands-on row.
+  const streetTrim = (list: NearbyPlace[]): NearbyPlace[] => {
+    const s = state.get();
+    if (!s.pano || placesZoom !== null || s.mode === 'portal') return list;
+    return usablePlaces(list, { centre: s.pano, minOffsetM: STREET_PLACE_MIN_OFFSET_M });
+  };
+
+  /** Look up places around a point; `zoom` is null in street (no map zoom applies). */
+  const loadPlaces = async (lat: number, lng: number, zoom: number | null): Promise<void> => {
     const token = ++placesToken;
     placesCentre = { lat, lng };
     placesZoom = zoom;
-    if (zoom < PLACES_MIN_ZOOM) {
+    if (zoom !== null && zoom < PLACES_MIN_ZOOM) {
       places = [];
       placesLoading = false;
       placesPageIndex = 0;
@@ -240,12 +252,12 @@ export const createTrack: TrackFactory = async (ctx) => {
     try {
       const found = await ctx.services.source.placesNear(lat, lng, (partial) => {
         if (token !== placesToken || disposed) return;
-        places = usablePlaces(partial);
+        places = streetTrim(usablePlaces(partial));
         placesPageIndex = 0;
         refreshPlaces();
       });
       if (token !== placesToken || disposed) return;
-      places = usablePlaces(found);
+      places = streetTrim(usablePlaces(found));
       placesPageIndex = 0;
     } catch (err) {
       if (token !== placesToken || disposed) return;
@@ -274,10 +286,8 @@ export const createTrack: TrackFactory = async (ctx) => {
       color: shown.placeholder && !voice.listening ? '#ffffff80' : '#ffffff',
     });
     text('search', 'search-status')?.setProperties({ text: searchNote });
-    text('search', 'search-mic-label')?.setProperties({
-      text: !voice.supported ? 'NO MIC' : voice.listening ? 'STOP' : 'MIC',
-      color: voice.supported ? '#ffffff' : COLORS.textDisabled,
-    });
+    box('search', 'search-mic-icon')?.setProperties({ display: voice.listening ? 'none' : 'flex' });
+    box('search', 'search-mic-stop')?.setProperties({ display: voice.listening ? 'flex' : 'none' });
     box('search', 'search-mic')?.setProperties({
       backgroundColor: !voice.supported ? COLORS.timeDisabled : voice.listening ? COLORS.timeBackToNow : COLORS.timeOn,
     });
@@ -520,6 +530,16 @@ export const createTrack: TrackFactory = async (ctx) => {
     bus.on('pano:shown', () => {
       refreshCredits();
       refreshHud();
+      // In street, the panel follows the player's spot; a same-spot time hop keeps the list.
+      const s = state.get();
+      if (s.mode !== 'street' || !s.pano) return;
+      const c = placesCentre;
+      const moved = !c || Math.abs(c.lat - s.pano.lat) > 0.0001 || Math.abs(c.lng - s.pano.lng) > 0.0001;
+      if (!moved) return;
+      places = [];
+      placesPageIndex = 0;
+      placesZoom = null;
+      void loadPlaces(s.pano.lat, s.pano.lng, null);
     }),
     bus.on('time:yearsKnown', () => {
       yearsKnown = true;

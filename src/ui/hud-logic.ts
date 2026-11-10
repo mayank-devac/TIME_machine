@@ -152,14 +152,26 @@ export interface PlacesPage {
   pageText: string;
 }
 
-/** The room list shows when there is a place to list, or while a lookup is running. */
+/** The places list shows in the room and in street; it needs a place to list, or a running lookup. */
 export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false): boolean =>
-  mode === 'table' && (placeCount > 0 || loading);
+  (mode === 'table' || mode === 'street') && (placeCount > 0 || loading);
 
-/** Drops places with a non-finite position or no finite year, so no row can read "NaN". */
-export function usablePlaces<T extends LatLng & { years: readonly number[] }>(places: readonly T[]): T[] {
+/** Drops places with a non-finite position or no finite year, so no row can read "NaN".
+ * When `centre` is given with `minOffsetM > 0`, also drops places closer than that to the
+ * centre — the street panel must not list the spot the player is standing on. */
+export function usablePlaces<T extends LatLng & { years: readonly number[] }>(
+  places: readonly T[],
+  opts: { centre?: LatLng | null; minOffsetM?: number } = {},
+): T[] {
+  const { centre = null, minOffsetM = 0 } = opts;
+  const tooClose = (p: LatLng): boolean => {
+    if (minOffsetM <= 0 || centre === null) return false;
+    const dLat = (p.lat - centre.lat) * 111_320;
+    const dLng = (p.lng - centre.lng) * 111_320 * Math.cos((centre.lat * Math.PI) / 180);
+    return !Number.isFinite(dLat) || !Number.isFinite(dLng) || Math.hypot(dLat, dLng) < minOffsetM;
+  };
   return places.filter(
-    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.years.some((y) => Number.isFinite(y)),
+    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.years.some((y) => Number.isFinite(y)) && !tooClose(p),
   );
 }
 export const showMapButton = (mode: Mode): boolean => mode === 'street' || mode === 'portal';
@@ -355,13 +367,25 @@ export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
   time: { leftDeg: 32, distance: 1.4, dy: -0.2 },
   year: { leftDeg: -32, distance: 1.4, dy: -0.05 },
   portal: { leftDeg: -32, distance: 1.4, dy: -0.4 },
-  // Room (table mode) list of places, beside the map table. Street mode never shows it.
+  // Places list: beside the table in the room (see STREET_PLACES_SLOT when a pano is live).
   places: { leftDeg: 42, distance: 1.3, dy: -0.1 },
   // Search (type or speak a place), beside the table on the right. Table mode only.
   search: { leftDeg: -30, distance: 1.5, dy: -0.12 },
   // Same spot as the PORTAL button's neighbour: just below it.
   map: { leftDeg: -32, distance: 1.4, dy: -0.55 },
 };
+
+/** Street raises the places panel above the button band: the time, portal and map buttons share
+ * the lower sides of the view, and the panel is wide enough to swallow the time button otherwise. */
+export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 52, distance: 1.5, dy: 0.22 };
+
+/** Street omits places that are basically the spot the player already stands on. */
+export const STREET_PLACE_MIN_OFFSET_M = 15;
+
+/** Where a HUD slot sits in a given mode. Only `places` moves; street needs the raised spot. */
+export function slotSpec(slot: HudSlot, mode: Mode): SlotSpec {
+  return slot === 'places' && mode === 'street' ? STREET_PLACES_SLOT : SLOTS[slot];
+}
 
 export interface Vec3Like {
   x: number;

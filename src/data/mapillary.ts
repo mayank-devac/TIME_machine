@@ -22,11 +22,13 @@ const FIELDS = [
 /** Mapillary started in 2014; the year-band fallback never looks earlier. */
 const FIRST_YEAR = 2014;
 const SEARCH_LIMIT = 100;
+/** `panosNear` asks for half the generic search limit; saturation still keys off SEARCH_LIMIT. */
+const NEAR_LIMIT = 50;
 const BBOX_LIMIT = 2000;
 /** Half-width of the places box in degrees (about 500 m) and the grid the centre snaps to. */
 const PLACES_HALF_DEG = 0.0045;
 const PLACES_GRID_DEG = 0.003;
-const MAX_PLACES = 30;
+const MAX_PLACES = 15;
 /** A place also absorbs panoramas up to this many times the offset away, if they add a new year. */
 const MERGE_REACH = 3;
 /** Places search tile edge in degrees of latitude (about 250 m). Tiles sit on a fixed global grid. */
@@ -321,7 +323,7 @@ export class MapillaryClient implements PanoSource {
     const radius = Math.max(1, Math.min(config.searchRadiusM, radiusM));
     const key = `near:${lat.toFixed(5)},${lng.toFixed(5)},${radius}`;
     return this.cached(key, async () => {
-      const { panos } = await this.search({ lat, lng, radius, limit: SEARCH_LIMIT });
+      const { panos } = await this.search({ lat, lng, radius, limit: NEAR_LIMIT });
       return sortByDistance(panos, { lat, lng });
     });
   }

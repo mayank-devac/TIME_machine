@@ -13,7 +13,7 @@ with no token it logs an error and returns the offline mock so the app still sta
 
 ## Behaviour
 
-- `panosNear(lat, lng, radiusM=50)`: radius search (radius clamped to 50, limit 100), panoramas only, nearest first.
+- `panosNear(lat, lng, radiusM=50)`: radius search (radius clamped to 50, limit 50), panoramas only, nearest first.
 - `yearsAt(lat, lng)`: radius search of `config.maxYearOffsetMetres`; groups by capture year (UTC), keeps the
   nearest per year, drops years whose nearest is farther than the cutoff. If the search returns 100 results
   (saturated; paging does not work) it re-queries once per year from 2014 to now using

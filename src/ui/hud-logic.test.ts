@@ -271,13 +271,21 @@ describe('places list', () => {
     expect(placesTitle(15, false, 3)).toBe('NEARBY, WITH PAST IMAGERY');
   });
 
-  it('shows the list in the room and MAP in street and portal', async () => {
+  it('shows the list in the room and in street; MAP only in street and portal', async () => {
     const { showMapButton, showPlacesPanel } = await import('./hud-logic.js');
-    expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, false]);
+    expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, true]);
     expect(showPlacesPanel('table', 0)).toBe(false);
     expect(showPlacesPanel('table', 0, true)).toBe(true);
-    expect(showPlacesPanel('street', 0, true)).toBe(false);
+    expect(showPlacesPanel('street', 0, true)).toBe(true);
+    expect(showPlacesPanel('portal', 3)).toBe(false);
     expect([showMapButton('table'), showMapButton('street'), showMapButton('portal')]).toEqual([false, true, true]);
+  });
+
+  it('moves the places slot out of the button band only in street', async () => {
+    const { SLOTS, STREET_PLACES_SLOT, slotSpec } = await import('./hud-logic.js');
+    expect(slotSpec('places', 'table')).toBe(SLOTS.places);
+    expect(slotSpec('places', 'street')).toBe(STREET_PLACES_SLOT);
+    expect(slotSpec('time', 'street')).toBe(SLOTS.time);
   });
 
   it('drops places that would show NaN', async () => {
@@ -289,5 +297,16 @@ describe('places list', () => {
       name: 'Nearby',
       yearsText: '2020',
     });
+  });
+
+  it('drops places closer than the minimum offset when street trimming asks for it', async () => {
+    const { usablePlaces } = await import('./hud-logic.js');
+    const here = { lat: 52.35, lng: 4.9, years: [2020] };
+    const near = { lat: 52.3501, lng: 4.9, years: [2021] }; // about 11 m north
+    const far = { lat: 52.3505, lng: 4.9, years: [2022] }; // about 55 m north
+    expect(usablePlaces([here, near, far], { centre: here, minOffsetM: 15 })).toEqual([far]);
+    expect(usablePlaces([here, near, far], { centre: here })).toEqual([here, near, far]);
+    expect(usablePlaces([here, near, far], { centre: null, minOffsetM: 15 })).toEqual([here, near, far]);
+    expect(usablePlaces([near], { centre: { lat: NaN, lng: NaN }, minOffsetM: 15 })).toEqual([]);
   });
 });
