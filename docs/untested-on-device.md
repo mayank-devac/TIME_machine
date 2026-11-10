@@ -30,3 +30,9 @@ Add to this list; do not remove items without a device test.
   1.6 m; stereo correctness of centring the sphere on each eye; stencil masking with Track E's
   real mask; refit to headset cap when an XR session starts. Not run even in the emulator:
   preview-then-full swap and downscaling (fixtures are only 2048 px), clicking an arrow.
+- Map table (Track D): whether Quest Browser keeps calling onBeforeRender during a session
+  (redraw is scheduled from it) and whether labels still update; frame cost of re-uploading a
+  2048^2 texture up to 30 times a second while panning; legibility of map labels and the
+  table-edge credit; real noisy hand pinch against the tap threshold and 48 px snap radius
+  (both guesses); two-hand zoom with real hands (only two emulated controllers tested); table
+  height and distance comfort; OpenFreeMap tile speed over Wi-Fi on a Quest.
