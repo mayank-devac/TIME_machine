@@ -5,7 +5,7 @@
  * Styling follows .agents/skills/xr-glass-design (glass, hairlines, violet/mint accents).
  */
 import type { CuratedSpot } from '../contracts.js';
-import type { PlaceResult } from './photon.js';
+import { createDebouncedSearch, searchPlaces, type DebouncedSearch, type PlaceResult } from './photon.js';
 
 export const LANDING_CREDIT =
   'Map data © OpenStreetMap contributors · Map tiles by OpenFreeMap · Street imagery and coverage © Mapillary and its contributors';
@@ -63,6 +63,20 @@ const CSS = `
 .tm-landing .tm-credit{margin-top:2px}
 .tm-landing .tm-credit{font-size:10.5px;line-height:1.5;color:var(--faint)}
 
+/* Search */
+.tm-landing .tm-search{display:flex;flex-direction:column;gap:6px}
+.tm-landing .tm-search input{width:100%;box-sizing:border-box;padding:9px 14px;border-radius:999px;border:1px solid var(--hair);background:rgba(255,255,255,.06);color:#fff;font:inherit;font-size:13px}
+.tm-landing .tm-search input::placeholder{color:var(--faint)}
+.tm-landing .tm-search input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.tm-landing .tm-results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto}
+.tm-landing .tm-results:empty{display:none}
+.tm-landing .tm-results li{display:flex;align-items:center;gap:4px}
+.tm-landing .tm-results .tm-hit{flex:1;min-width:0;padding:7px 10px;border:0;border-radius:12px;background:transparent;text-align:left;font-size:13px;color:var(--soft)}
+.tm-landing .tm-results .tm-hit:hover{background:rgba(255,255,255,.1);color:#fff}
+.tm-landing .tm-results .tm-go{flex:none;width:30px;height:30px;padding:0;display:grid;place-items:center;border-radius:50%;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.65)}
+.tm-landing .tm-results .tm-go:hover{background:rgba(124,108,255,.7)}
+.tm-landing .tm-results .tm-go svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
 /* Curated rail: one line, drifting right to left; pauses on hover or keyboard focus */
 .tm-rail{position:fixed;left:0;right:0;bottom:20px;z-index:1000;overflow:hidden;padding:4px 0;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 72px,#000 calc(100% - 72px),transparent);
@@ -100,12 +114,13 @@ export class LandingPage {
   private readonly rail: HTMLElement;
   private readonly status: HTMLElement;
   private readonly body: HTMLElement;
+  private readonly search: DebouncedSearch;
   private collapsed = false;
 
   constructor(
     private readonly cb: LandingCallbacks,
     spots: CuratedSpot[],
-    _fetchFn: typeof fetch = fetch.bind(globalThis),
+    fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {
     this.style = document.createElement('style');
     this.style.textContent = CSS;
@@ -120,6 +135,10 @@ export class LandingPage {
         <button type="button" class="tm-toggle" aria-expanded="true" title="Hide">Hide</button>
       </div>
       <div class="tm-body">
+        <form class="tm-search" role="search" autocomplete="off">
+          <input type="search" name="q" placeholder="Search for a place…" aria-label="Search for a place" />
+          <ul class="tm-results" aria-label="Search results"></ul>
+        </form>
         <ol class="tm-steps">
           <li><i>1</i><span>Pick a place from the strip below.</span></li>
           <li><i>2</i><span>Press <b>Enter XR</b> to stand at the map table.</span></li>
@@ -150,6 +169,34 @@ export class LandingPage {
       toggle.textContent = this.collapsed ? 'Show' : 'Hide';
       toggle.title = this.collapsed ? 'Show' : 'Hide';
       toggle.setAttribute('aria-expanded', String(!this.collapsed));
+    });
+
+    const form = root.querySelector<HTMLFormElement>('.tm-search')!;
+    const input = form.querySelector<HTMLInputElement>('input')!;
+    const results = form.querySelector<HTMLUListElement>('.tm-results')!;
+    this.search = createDebouncedSearch({
+      search: (q, signal) => searchPlaces(q, { fetchFn, signal }),
+      onResults: (list, q) => {
+        results.replaceChildren(...list.map((p) => this.hit(p)));
+        if (q.length >= 3 && list.length === 0) this.setStatus(`No places found for "${q}".`, true);
+        else this.setStatus('');
+      },
+      onError: () => this.setStatus('Place search failed. Check your connection and try again.', true),
+      onBusy: (busy) => {
+        if (busy) this.setStatus('Searching…');
+      },
+    });
+    input.addEventListener('input', () => this.search.input(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        this.search.input('');
+        this.search.flush();
+      }
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.search.flush();
     });
 
     const views = this.cb.views;
@@ -212,6 +259,7 @@ export class LandingPage {
   }
 
   dispose(): void {
+    this.search.cancel();
     this.element.remove();
     this.rail.remove();
     this.style.remove();
@@ -220,6 +268,29 @@ export class LandingPage {
   private setStatus(text: string, error = false): void {
     this.status.textContent = text;
     this.status.style.color = error ? '#ff8a8a' : '';
+  }
+
+  /** One search result: the label shows it on the table, the round button enters the street. */
+  private hit(place: PlaceResult): HTMLLIElement {
+    const li = document.createElement('li');
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'tm-hit';
+    name.textContent = place.label;
+    name.title = `Show ${place.label} on the table map`;
+    name.addEventListener('click', () => {
+      this.cb.onPreview(place);
+      this.setStatus(`Showing ${place.label.split(',')[0].trim()} on the table.`);
+    });
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'tm-go';
+    go.innerHTML = STREET_VIEW_ICON;
+    go.setAttribute('aria-label', `Street view: ${place.label}`);
+    go.title = `Step into the street at ${place.label}`;
+    go.addEventListener('click', () => this.cb.onEnter(place));
+    li.append(name, go);
+    return li;
   }
 
   /** One place: the name opens it on the table, the round button steps into the street. */

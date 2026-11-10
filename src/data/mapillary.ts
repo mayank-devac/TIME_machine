@@ -56,6 +56,9 @@ interface RawImage {
 }
 
 class ThrottledError extends Error {}
+/** Mapillary code 1 (HTTP 500): the box holds too many images to answer. Split it and retry. */
+class TooMuchDataError extends Error {}
+const MAX_SPLIT_DEPTH = 3;
 
 export function distanceM(a: LatLng, b: LatLng): number {
   const R = 6371008.8;
@@ -138,6 +141,9 @@ export class MapillaryClient implements PanoSource {
     const body: Body = await (res.json() as Promise<Body>).catch(() => null);
     if (body?.error) {
       if (body.error.code === 4) throw new ThrottledError('Mapillary rate limit hit (code 4)');
+      if (body.error.code === 1 && /reduce the amount/i.test(body.error.message ?? '')) {
+        throw new TooMuchDataError(body.error.message);
+      }
       throw new Error(`Mapillary error ${body.error.code ?? res.status}: ${body.error.message ?? 'unknown'}`);
     }
     if (res.status === 429) throw new ThrottledError('Mapillary rate limit hit (HTTP 429)');
@@ -196,6 +202,52 @@ export class MapillaryClient implements PanoSource {
     return { panos, raw: data.length };
   }
 
+  /**
+   * Search a bbox ("w,s,e,n"). If Mapillary says it is too dense, search the four quadrants
+   * instead (up to MAX_SPLIT_DEPTH levels) and merge, de-duplicating by id.
+   */
+  private async searchBox(
+    bbox: string,
+    params: Record<string, string | number>,
+    depth = 0,
+  ): Promise<{ panos: Pano[]; raw: number }> {
+    try {
+      return await this.search({ ...params, bbox });
+    } catch (err) {
+      // In the browser the slow busy-box 500 often surfaces as a bare network TypeError
+      // ("Failed to fetch") instead of a readable code-1 body, so split on that too.
+      const tooDense = err instanceof TooMuchDataError || err instanceof TypeError;
+      if (!tooDense || depth >= MAX_SPLIT_DEPTH) throw err;
+      const [w, s, e, n] = bbox.split(',').map(Number);
+      const mx = (w + e) / 2;
+      const my = (s + n) / 2;
+      const quads = [
+        [w, s, mx, my],
+        [mx, s, e, my],
+        [w, my, mx, n],
+        [mx, my, e, n],
+      ].map((q) => q.map((v) => v.toFixed(6)).join(','));
+      const seen = new Map<string, Pano>();
+      let raw = 0;
+      let failures = 0;
+      let lastErr: unknown = err;
+      for (const q of quads) {
+        try {
+          const r = await this.searchBox(q, params, depth + 1);
+          raw = Math.max(raw, r.raw); // saturated only if one quadrant alone hit the limit
+          for (const p of r.panos) seen.set(p.id, p);
+        } catch (qErr) {
+          // A throttle must stop everything; any other failed quadrant just loses its own panos.
+          if (qErr instanceof ThrottledError) throw qErr;
+          failures++;
+          lastErr = qErr;
+        }
+      }
+      if (failures === quads.length) throw lastErr;
+      return { panos: [...seen.values()], raw };
+    }
+  }
+
   // ------------------------------------------------------------------ PanoSource
 
   panosNear(lat: number, lng: number, radiusM: number = config.searchRadiusM): Promise<Pano[]> {
@@ -244,16 +296,25 @@ export class MapillaryClient implements PanoSource {
       const bbox = [cLng - dLng, cLat - PLACES_HALF_DEG, cLng + dLng, cLat + PLACES_HALF_DEG]
         .map((n) => n.toFixed(6))
         .join(',');
-      const base = { bbox, is_pano: 'true', limit: BBOX_LIMIT };
-      const first = await this.search(base);
+      const base = { is_pano: 'true', limit: BBOX_LIMIT };
+      const first = await this.searchBox(bbox, base);
       let all = first.panos;
       if (first.raw >= BBOX_LIMIT) {
         // Saturated: one request per year band so every year is represented.
         const thisYear = new Date().getUTCFullYear();
         const bands: Pano[] = [];
         for (let y = FIRST_YEAR; y <= thisYear; y++) {
-          const r = await this.search({ ...base, start_captured_at: isoStart(y), end_captured_at: isoEnd(y) });
-          bands.push(...r.panos);
+          try {
+            const r = await this.searchBox(bbox, {
+              ...base,
+              start_captured_at: isoStart(y),
+              end_captured_at: isoEnd(y),
+            });
+            bands.push(...r.panos);
+          } catch (err) {
+            // One bad year must not lose the others (Mapillary's busy-box error is flaky).
+            if (err instanceof ThrottledError) throw err;
+          }
         }
         all = bands;
       }

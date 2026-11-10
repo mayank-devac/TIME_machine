@@ -108,6 +108,7 @@ export function initialAppState(): AppState {
 /**
  * Who emits what (emit only your own; listen to anything):
  *  spot:selected      Track D (map pick) or the landing page, or the curated list.
+ *  map:flyRequested   Track G (search panel). Track D moves the table map there; no street view yet.
  *  pano:shown         Track B after `show` or `commitPast` has put a panorama on screen.
  *  map:viewChanged    Track D, about 0.7 s after the table map stopped panning or zooming.
  *  time:yearsKnown    Track C, after `pano:shown`, from `PanoSource.yearsAt`.
@@ -125,6 +126,7 @@ export function initialAppState(): AppState {
 export interface EventMap {
   'spot:selected': SpotInfo;
   'map:viewChanged': { lat: number; lng: number; zoom: number };
+  'map:flyRequested': { lat: number; lng: number; zoom?: number; label?: string };
   'pano:shown': { pano: Pano };
   'time:yearsKnown': { years: number[]; earliest: number | null };
   'time:toggled': { on: boolean };

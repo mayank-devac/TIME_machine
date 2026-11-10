@@ -264,3 +264,42 @@ describe('clusterPlaces', () => {
     expect(out.map((p) => p.panoId)).toEqual(['near1', 'far1']);
   });
 });
+
+describe('placesNear on a dense box', () => {
+  it('splits the box into quadrants when Mapillary says it holds too much data', async () => {
+    const tooMuch = {
+      __status: 500,
+      error: { code: 1, message: "Please reduce the amount of data you're asking for, then retry your request" },
+    };
+    const area = (u: URL): number => {
+      const [w, s, e, n] = (u.searchParams.get('bbox') ?? '').split(',').map(Number);
+      return (e - w) * (n - s);
+    };
+    let full = 0;
+    const { client, fetchImpl } = setup((u) => {
+      if (full === 0) full = area(u);
+      return area(u) >= full * 0.99 ? tooMuch : { data: [raw(1, 2022, 5), raw(2, 2024, 5)] };
+    });
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(fetchImpl).toHaveBeenCalledTimes(5); // the full box, then four quadrants
+    expect(places.length).toBeGreaterThan(0);
+  });
+
+  it('also splits when the browser reports the dense box as a network failure', async () => {
+    const area = (u: URL): number => {
+      const [w, s, e, n] = (u.searchParams.get('bbox') ?? '').split(',').map(Number);
+      return (e - w) * (n - s);
+    };
+    let full = 0;
+    let quad = 0;
+    const { client } = setup((u) => {
+      if (full === 0) full = area(u);
+      if (area(u) >= full * 0.99) throw new TypeError('Failed to fetch');
+      // One quadrant fails too; the other three still produce places.
+      if (++quad === 1) throw new TypeError('Failed to fetch');
+      return { data: [raw(quad * 10 + 1, 2022, 5), raw(quad * 10 + 2, 2024, 5)] };
+    });
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(places.length).toBeGreaterThan(0);
+  });
+});

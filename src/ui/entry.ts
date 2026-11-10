@@ -2,6 +2,20 @@ import { RayInteractable, Vector3, Quaternion } from '@iwsdk/core';
 import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
 import type { ArchivePhoto, LatLng, NearbyPlace, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { HudTag } from '../track-components.js';
+import { searchPlaces } from '../map/photon.js';
+import type { PlaceResult } from '../map/photon.js';
+import {
+  KEY_IDS,
+  SEARCH_RESULTS,
+  SEARCH_ZOOM,
+  applyKey,
+  canSearch,
+  cleanSpoken,
+  displayText,
+  resultLabel,
+  showSearchPanel,
+} from './search-logic.js';
+import { createVoiceInput } from './voice.js';
 import {
   BusyScopes,
   SLOTS,
@@ -27,11 +41,11 @@ import type { HudSlot, Toast } from './hud-logic.js';
 const ASSET_IDS: Record<HudSlot, string> = {
   time: 'hud-time-button',
   year: 'hud-year-label',
-  years: 'hud-year-list',
   credits: 'hud-credits',
   status: 'hud-status',
   portal: 'hud-portal-button',
   info: 'hud-info-button',
+  search: 'hud-search',
   places: 'hud-places',
   map: 'hud-map-button',
 };
@@ -152,16 +166,15 @@ export const createTrack: TrackFactory = async (ctx) => {
   let chips: ReturnType<typeof yearChips> = [];
   const refreshYearList = (): void => {
     chips = yearChips({ state: state.get(), yearsKnown });
-    setVisible('years', chips.length > 0);
     for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
       const chip = chips[i];
-      const root = box('years', `year-chip-${i}`);
+      const root = box('year', `year-chip-${i}`);
       root?.setProperties({
         display: chip ? 'flex' : 'none',
         backgroundColor: !chip ? COLORS.chip : chip.selected ? COLORS.chipSelected : chip.isPresent ? COLORS.chipPresent : COLORS.chip,
       });
       if (chip) {
-        text('years', `year-chip-label-${i}`)?.setProperties({
+        text('year', `year-chip-label-${i}`)?.setProperties({
           text: String(chip.year),
           color: chip.selected ? '#ffffff' : '#ffffffcc',
         });
@@ -224,8 +237,118 @@ export const createTrack: TrackFactory = async (ctx) => {
     refreshPlaces();
   };
 
+  // Room search: type on the panel keyboard or speak, ENTER looks the text up, USE flies the map there.
+  const voice = createVoiceInput();
+  let query = '';
+  let found: PlaceResult[] = [];
+  let picked = -1;
+  let searchNote = 'Pick a place name, then ENTER.';
+  let searchToken = 0;
+  let searchAbort: AbortController | null = null;
+  const refreshSearch = (): void => {
+    setVisible('search', showSearchPanel(state.get().mode));
+    const shown = displayText(query, !voice.listening);
+    text('search', 'search-text')?.setProperties({
+      text: voice.listening && query.length === 0 ? 'Listening…' : shown.text,
+      color: shown.placeholder && !voice.listening ? '#ffffff80' : '#ffffff',
+    });
+    text('search', 'search-status')?.setProperties({ text: searchNote });
+    text('search', 'search-mic-label')?.setProperties({
+      text: !voice.supported ? 'NO MIC' : voice.listening ? 'STOP' : 'MIC',
+      color: voice.supported ? '#ffffff' : COLORS.textDisabled,
+    });
+    box('search', 'search-mic')?.setProperties({
+      backgroundColor: !voice.supported ? COLORS.timeDisabled : voice.listening ? COLORS.timeBackToNow : COLORS.timeOn,
+    });
+    box('search', 'search-enter')?.setProperties({
+      backgroundColor: canSearch(query) ? COLORS.timeOn : COLORS.timeDisabled,
+    });
+    box('search', 'search-use')?.setProperties({
+      backgroundColor: picked >= 0 ? '#2ee6d659' : COLORS.timeDisabled,
+    });
+    for (let i = 0; i < SEARCH_RESULTS; i++) {
+      const r = found[i];
+      box('search', `search-row-${i}`)?.setProperties({
+        display: r ? 'flex' : 'none',
+        backgroundColor: i === picked ? COLORS.chipSelected : COLORS.chip,
+      });
+      if (r) text('search', `search-row-label-${i}`)?.setProperties({ text: resultLabel(r.label) });
+    }
+  };
+  const runSearch = async (): Promise<void> => {
+    if (!canSearch(query)) {
+      searchNote = 'Type at least 3 letters.';
+      refreshSearch();
+      return;
+    }
+    const mine = ++searchToken;
+    searchAbort?.abort();
+    searchAbort = new AbortController();
+    searchNote = 'Searching…';
+    refreshSearch();
+    try {
+      const list = await searchPlaces(query, { signal: searchAbort.signal, limit: SEARCH_RESULTS });
+      if (mine !== searchToken || disposed) return;
+      found = list;
+      picked = list.length > 0 ? 0 : -1;
+      searchNote = list.length > 0 ? 'Tap a result, then USE.' : `No places found for "${query}".`;
+    } catch (err) {
+      if (mine !== searchToken || disposed || (err as { name?: string }).name === 'AbortError') return;
+      found = [];
+      picked = -1;
+      searchNote = 'Search failed. Check the connection.';
+    }
+    refreshSearch();
+  };
+  const clearSearch = (): void => {
+    voice.stop();
+    searchToken++;
+    searchAbort?.abort();
+    query = '';
+    found = [];
+    picked = -1;
+    searchNote = 'Pick a place name, then ENTER.';
+    refreshSearch();
+  };
+  const useResult = (): void => {
+    const r = found[picked];
+    if (!r) {
+      searchNote = 'Search, then tap a result.';
+      refreshSearch();
+      return;
+    }
+    bus.emit('map:flyRequested', { lat: r.lat, lng: r.lng, zoom: SEARCH_ZOOM, label: r.label });
+    searchNote = `Showing ${resultLabel(r.label).split(',')[0]} on the table.`;
+    refreshSearch();
+  };
+  const toggleMic = (): void => {
+    if (!voice.supported) {
+      searchNote = 'Speech is not available here. Use the keys.';
+      refreshSearch();
+      return;
+    }
+    if (voice.listening) {
+      voice.stop();
+      return;
+    }
+    searchNote = 'Speak now…';
+    voice.start({
+      onText: (heard, final) => {
+        query = cleanSpoken(heard);
+        refreshSearch();
+        if (final) void runSearch();
+      },
+      onEnd: (error) => {
+        if (error) searchNote = error;
+        refreshSearch();
+      },
+    });
+    refreshSearch();
+  };
+
   const refreshHud = (): void => {
     refreshPlaces();
+    refreshSearch();
     const view = deriveHud({ state: state.get(), yearsKnown });
     setVisible('time', view.showTimeButton);
     setVisible('year', view.showYear);
@@ -271,7 +394,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     asset.name = `hud-${slot}`;
     const entity = world.createTransformEntity(asset, { persistent: true });
     entity.addComponent(HudTag, { slot });
-    if (['time', 'portal', 'info', 'years', 'places', 'map'].includes(slot)) entity.addComponent(RayInteractable);
+    if (['time', 'portal', 'info', 'year', 'places', 'map', 'search'].includes(slot)) entity.addComponent(RayInteractable);
     asset.visible = slot === 'info';
     panels.set(slot, { entity, asset, object: asset });
   }
@@ -297,7 +420,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     bus.emit('time:yearRequested', { year: action.year });
   };
   for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
-    const el = box('years', `year-chip-${i}`);
+    const el = box('year', `year-chip-${i}`);
     const handler = (): void => onChipClick(i);
     el?.addEventListener('click', handler);
     offs.push(() => el?.removeEventListener('click', handler));
@@ -319,6 +442,24 @@ export const createTrack: TrackFactory = async (ctx) => {
   };
   listen(box('places', 'places-prev'), () => turnPage(-1));
   listen(box('places', 'places-next'), () => turnPage(1));
+  for (const key of [...KEY_IDS, 'SPACE']) {
+    const id = key === 'SPACE' ? 'search-space' : `search-key-${key}`;
+    listen(box('search', id), () => {
+      query = applyKey(query, key);
+      refreshSearch();
+    });
+  }
+  for (let i = 0; i < SEARCH_RESULTS; i++) {
+    listen(box('search', `search-row-${i}`), () => {
+      if (!found[i]) return;
+      picked = i;
+      refreshSearch();
+    });
+  }
+  listen(box('search', 'search-enter'), () => void runSearch());
+  listen(box('search', 'search-clear'), clearSearch);
+  listen(box('search', 'search-use'), useResult);
+  listen(box('search', 'search-mic'), toggleMic);
   listen(box('map', 'map-btn'), () => bus.emit('mode:requested', { mode: 'table' }));
   const timeBtn = box('time', 'time-btn');
   const portalBtn = box('portal', 'portal-btn');
@@ -405,6 +546,8 @@ export const createTrack: TrackFactory = async (ctx) => {
     recentre,
     dispose() {
       disposed = true;
+      voice.stop();
+      searchAbort?.abort();
       offs.forEach((off) => off());
       toasts.dispose();
       if (spinnerTimer !== null) clearInterval(spinnerTimer);

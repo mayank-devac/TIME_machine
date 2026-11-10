@@ -36,3 +36,8 @@ Add to this list; do not remove items without a device test.
   table-edge credit; real noisy hand pinch against the tap threshold and 48 px snap radius
   (both guesses); two-hand zoom with real hands (only two emulated controllers tested); table
   height and distance comfort; OpenFreeMap tile speed over Wi-Fi on a Quest.
+- Room search panel (Track G): whether the Quest Browser offers the Web Speech API (`SpeechRecognition`)
+  inside an immersive session and whether it can use the headset microphone; the panel shows
+  "NO MIC" and falls back to the keys when it is missing. Speech audio goes to the browser vendor's
+  service. Also untested: reach and size of the 5.4 cm keys with a real ray or pinch, panel
+  placement (30 degrees right, 1.5 m) and the Photon lookup over Wi-Fi.

@@ -9,7 +9,7 @@ Five world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), cr
 | credits | `hud-credits` | always |
 | status | `hud-status` | a toast, loading, or "No earlier imagery here" is active |
 | time | `hud-time-button` | mode `street` or `portal`; greyed unless years >= 2 |
-| year | `hud-year-label` | mode `street` or `portal`; present year, dialled year when the lens is on |
+| year | `hud-year-label` | mode `street` or `portal`; present year (glass pill) with the clickable year chips under it, no backing panel |
 | portal | `hud-portal-button` | mode `street` (PORTAL) or `portal` (BACK) |
 
 Status priority: error toast, then loading spinner, then "No earlier imagery here".

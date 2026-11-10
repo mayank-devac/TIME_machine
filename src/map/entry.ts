@@ -43,6 +43,7 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
     spots,
   );
 
+  const offFly = bus.on('map:flyRequested', ({ lat, lng, zoom }) => table.flyTo(lat, lng, zoom ?? 17));
   const inXR = (): boolean => !!world.session || world.renderer.xr.isPresenting;
   const syncLanding = (): void => landing.setVisible(state.get().mode === 'table' && !inXR());
 
@@ -114,6 +115,7 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
       devTimers.forEach((t) => clearTimeout(t));
       offTrace.forEach((off) => off());
       offMode();
+      offFly();
       xr.removeEventListener('sessionstart', onSession);
       xr.removeEventListener('sessionend', onSession);
       landing.dispose();

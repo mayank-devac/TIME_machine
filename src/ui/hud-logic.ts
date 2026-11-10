@@ -329,12 +329,12 @@ export class ToastQueue {
 export type HudSlot =
   | 'time'
   | 'year'
-  | 'years'
   | 'credits'
   | 'status'
   | 'portal'
   | 'info'
   | 'places'
+  | 'search'
   | 'map';
 
 export interface SlotSpec {
@@ -351,11 +351,12 @@ export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
   info: { leftDeg: 0, distance: 1.5, dy: -0.78 },
   status: { leftDeg: 0, distance: 1.5, dy: -0.5 },
   time: { leftDeg: 32, distance: 1.4, dy: -0.2 },
-  years: { leftDeg: 32, distance: 1.4, dy: -0.37 },
   year: { leftDeg: -32, distance: 1.4, dy: -0.05 },
   portal: { leftDeg: -32, distance: 1.4, dy: -0.4 },
   // Room (table mode) list of places, beside the map table. Street mode never shows it.
   places: { leftDeg: 42, distance: 1.3, dy: -0.1 },
+  // Search (type or speak a place), beside the table on the right. Table mode only.
+  search: { leftDeg: -30, distance: 1.5, dy: -0.12 },
   // Same spot as the PORTAL button's neighbour: just below it.
   map: { leftDeg: -32, distance: 1.4, dy: -0.55 },
 };
