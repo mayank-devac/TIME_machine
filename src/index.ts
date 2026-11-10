@@ -18,7 +18,7 @@ World.create(
   const bus = new EventBus();
   const state = createAppState(bus);
   const source = createPanoSource();
-  const stage = createPanoStage(world, bus);
+  const stage = createPanoStage(world, bus, source);
   const ctx: TrackContext = { world, bus, state, services: { source, stage } };
 
   wireFlow(ctx);
