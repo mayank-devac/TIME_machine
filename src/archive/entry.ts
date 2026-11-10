@@ -4,7 +4,7 @@ import { createController } from './controller.js';
 import { ArchiveFadeSystem, createFrameRenderer } from './frames.js';
 
 /** Dev driver (fixture events, no other track needed). MUST be false when finishing. */
-const DEV_DRIVER = true;
+const DEV_DRIVER = false;
 
 /** Track F: old Wikimedia Commons photographs as floating frames below the earliest Mapillary year. */
 export const createTrack: TrackFactory = (ctx): Track & ArchiveService => {
