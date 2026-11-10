@@ -6,6 +6,7 @@ import type { Pano, TrackContext, Unsubscribe } from '../contracts.js';
 import { TimeLensTag } from '../track-components.js';
 import { TIME } from './constants.js';
 import { rimOpacity } from './curves.js';
+import { DialVisual } from './dial-visual.js';
 import { smoothDirection, smoothingAlpha } from './lens-math.js';
 import { LensMachine } from './machine.js';
 import type { LensPhase } from './machine.js';
@@ -33,6 +34,8 @@ export class TimeMachine {
   maxTexturesSeen = 0;
 
   private readonly rim = new LensRim();
+  private readonly dial = new DialVisual();
+  private readonly dialEntity: Entity;
   private readonly rimEntity: Entity;
   private readonly probeEntity: Entity;
   private readonly offs: Unsubscribe[] = [];
@@ -59,6 +62,8 @@ export class TimeMachine {
     // Second marker entity so tools can read live numbers: slot "textures", value = count.
     this.probeEntity = world.createTransformEntity(undefined, { persistent: true });
     this.probeEntity.addComponent(TimeLensTag, { slot: 'textures', value: 0 });
+    this.dialEntity = world.createTransformEntity(this.dial.mesh, { persistent: true });
+    this.dialEntity.addComponent(TimeLensTag, { slot: 'dial', value: 0 });
 
     this.offs.push(
       bus.on('pano:shown', ({ pano }) => void this.onPanoShown(pano)),
@@ -277,6 +282,16 @@ export class TimeMachine {
     this.publish(textures);
   }
 
+  /**
+   * Wrist dial face, once per frame after `frame()`. `grip` is the dial hand's world
+   * position, or null when there is no dial hand (desktop page, hand not tracked).
+   * `progress` is the twist since the last click as a fraction of a step; positive is later.
+   */
+  dialFrame(grip: Vector3 | null, head: Vector3, held: boolean, progress: number): void {
+    if (grip === null || !this.machine.isActive || !this.machine.followsHand) this.dial.hide();
+    else this.dial.update(grip, head, held, progress);
+  }
+
   /** Mirror state into the marker components (only on change) for ECS tools and tests. */
   private publish(textures: number): void {
     const m = this.machine;
@@ -284,6 +299,16 @@ export class TimeMachine {
       if (DEV) {
         console.info(
           `[time] ${this.lastPhase} -> ${m.phase} year=${m.year} textures=${textures} max=${this.maxTexturesSeen}`,
+        );
+      }
+      if (m.year !== this.lastYear) {
+        const ladder = m.years;
+        const i = m.year === null ? -1 : ladder.indexOf(m.year);
+        this.dial.paint(
+          m.year,
+          i > 0 ? ladder[i - 1] : null,
+          i >= 0 && i < ladder.length - 1 ? ladder[i + 1] : null,
+          m.year !== null && !m.yearHasPano,
         );
       }
       this.lastPhase = m.phase;
@@ -303,6 +328,8 @@ export class TimeMachine {
     const stage = this.ctx.services.stage;
     if (stage.lens.pastTexture || stage.lens.enabled) stage.clearPast();
     this.rim.dispose();
+    this.dial.dispose();
+    this.dialEntity.dispose();
     this.rimEntity.dispose();
     this.probeEntity.dispose();
   }

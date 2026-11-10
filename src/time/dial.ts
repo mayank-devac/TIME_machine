@@ -21,16 +21,22 @@ export function wrapAngle(a: number): number {
 }
 
 /**
- * Signed twist, in radians, of orientation `now` relative to `start`, measured about the
- * hand's own local Z axis (swing-twist decomposition of `start^-1 * now`). Swinging the arm
- * around does not count; only rolling the wrist does. Result is in (-PI, PI].
+ * Signed twist, in radians, of orientation `now` relative to `start`, measured about a
+ * fixed WORLD-space unit axis (swing-twist decomposition of `now * start^-1`). The runtime
+ * passes the direction the dial hand was pointing when the pinch began, so rolling the wrist
+ * counts and swinging the arm does not, whatever axis convention the hand's pose uses.
+ * Positive is a right-handed turn about the axis: clockwise for a viewer looking along it.
+ * Result is in (-PI, PI].
  */
-export function twistAboutLocalZ(start: QuatLike, now: QuatLike): number {
-  // rel = conj(start) * now; only its z and w parts are needed.
-  const rz = start.w * now.z - start.z * now.w - start.x * now.y + start.y * now.x;
-  const rw = start.w * now.w + start.x * now.x + start.y * now.y + start.z * now.z;
-  if (rz === 0 && rw === 0) return 0; // pure 180 degree swing: twist undefined, call it none
-  return wrapAngle(2 * Math.atan2(rz, rw));
+export function twistAboutAxis(start: QuatLike, now: QuatLike, ax: number, ay: number, az: number): number {
+  // rel = now * conj(start), the rotation from `start` to `now` in world space.
+  const rx = -now.w * start.x + now.x * start.w - now.y * start.z + now.z * start.y;
+  const ry = -now.w * start.y + now.x * start.z + now.y * start.w - now.z * start.x;
+  const rz = -now.w * start.z - now.x * start.y + now.y * start.x + now.z * start.w;
+  const rw = now.w * start.w + now.x * start.x + now.y * start.y + now.z * start.z;
+  const along = rx * ax + ry * ay + rz * az;
+  if (along === 0 && rw === 0) return 0; // pure 180 degree swing: twist undefined, call it none
+  return wrapAngle(2 * Math.atan2(along, rw));
 }
 
 /**

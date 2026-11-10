@@ -1,6 +1,6 @@
 import { InputComponent, Quaternion, Vector3, VisibilityState, createSystem } from '@iwsdk/core';
 import { TIME } from './constants.js';
-import { DialTracker, WheelAccumulator, twistAboutLocalZ } from './dial.js';
+import { DialTracker, WheelAccumulator, twistAboutAxis } from './dial.js';
 import { clientToNdcX, clientToNdcY, directionBetween, ndcToDirection } from './lens-math.js';
 import type { TimeMachine } from './time-machine.js';
 
@@ -26,6 +26,8 @@ export class TimeLensSystem extends createSystem({}) {
   private hand!: Vector3;
   private forward!: Vector3;
   private target!: Vector3;
+  private dialPos!: Vector3;
+  private dialAxis!: Vector3;
   private dialStart!: Quaternion;
   private dialNow!: Quaternion;
   private dial!: DialTracker;
@@ -48,6 +50,8 @@ export class TimeLensSystem extends createSystem({}) {
     this.hand = new Vector3();
     this.forward = new Vector3(0, 0, -1);
     this.target = new Vector3(0, 0, -1);
+    this.dialPos = new Vector3();
+    this.dialAxis = new Vector3(0, 0, -1);
     this.dialStart = new Quaternion();
     this.dialNow = new Quaternion();
     this.dial = new DialTracker(TIME.dialStepRad);
@@ -83,6 +87,7 @@ export class TimeLensSystem extends createSystem({}) {
     let pushHeld = false;
     let dialHeld = false;
     let yearDelta = 0;
+    let dialGrip: Vector3 | null = null;
 
     if (this.visibilityState.peek() === VisibilityState.NonImmersive) {
       this.dial.end();
@@ -100,14 +105,20 @@ export class TimeLensSystem extends createSystem({}) {
         const dialSide: Side = lensSide === 'right' ? 'left' : 'right';
         const xr = this.input.xr;
         pushHeld = xr.getSelectState(lensSide).active;
-        dialHeld = xr.getPrimaryInputSource(dialSide) !== undefined && xr.getSelectState(dialSide).active;
+        const dialTracked = xr.getPrimaryInputSource(dialSide) !== undefined;
+        dialHeld = dialTracked && xr.getSelectState(dialSide).active;
         yearDelta = this.sampleDial(dialSide, dialHeld) + this.sampleThumbsticks();
+        if (dialTracked) {
+          this.player.gripSpaces[dialSide].getWorldPosition(this.dialPos);
+          dialGrip = this.dialPos;
+        }
       } else {
         this.dial.end();
       }
     }
 
     tm.frame(delta, time, this.head, this.target, pushHeld, dialHeld, yearDelta);
+    tm.dialFrame(dialGrip, this.head, dialHeld, (this.dial.offset * TIME.dialDirection) / TIME.dialStepRad);
   }
 
   /** Mouse lens: head is the camera, direction is the view ray through the pointer. */
@@ -150,7 +161,10 @@ export class TimeLensSystem extends createSystem({}) {
     return side;
   }
 
-  /** Pinch and twist: roll of the dial hand's grip pose since the pinch began. */
+  /**
+   * Pinch and twist: roll of the dial hand since the pinch began, about the direction it
+   * was pointing (its target ray) at that moment.
+   */
   private sampleDial(side: Side, held: boolean): number {
     if (!held) {
       this.dial.end();
@@ -159,11 +173,13 @@ export class TimeLensSystem extends createSystem({}) {
     const grip = this.player.gripSpaces[side];
     if (!this.dial.isActive) {
       grip.getWorldQuaternion(this.dialStart);
+      this.player.raySpaces[side].getWorldDirection(this.dialAxis).negate(); // ray points along -Z
       this.dial.begin(0);
       return 0;
     }
     grip.getWorldQuaternion(this.dialNow);
-    return this.dial.update(twistAboutLocalZ(this.dialStart, this.dialNow)) * TIME.dialDirection;
+    const a = this.dialAxis;
+    return this.dial.update(twistAboutAxis(this.dialStart, this.dialNow, a.x, a.y, a.z)) * TIME.dialDirection;
   }
 
   /** Controller fallback: a flick of either thumbstick. Left is earlier, right is later. */

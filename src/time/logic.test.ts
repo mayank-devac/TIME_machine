@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { closeRadius, easeInOutCubic, openRadius, pushRadius, rimOpacity } from './curves.js';
-import { DialTracker, WheelAccumulator, twistAboutLocalZ, wrapAngle } from './dial.js';
+import { DialTracker, WheelAccumulator, twistAboutAxis, wrapAngle } from './dial.js';
 import type { QuatLike } from './dial.js';
 import {
   angleBetween,
@@ -81,15 +81,18 @@ describe('dial', () => {
     expect(wrapAngle(deg(720))).toBeCloseTo(0);
   });
 
-  it('measures roll about the hand axis and ignores arm swing', () => {
-    const start = quat(0, 1, 0, deg(40)); // hand turned 40 degrees to the side
-    const rolled = mul(start, quat(0, 0, 1, deg(30))); // then rolled 30 degrees about its own Z
-    expect(twistAboutLocalZ(start, rolled)).toBeCloseTo(deg(30));
-    const rolledBack = mul(start, quat(0, 0, 1, deg(-50)));
-    expect(twistAboutLocalZ(start, rolledBack)).toBeCloseTo(deg(-50));
-    const swung = mul(start, quat(1, 0, 0, deg(35))); // pitch only: not a twist
-    expect(twistAboutLocalZ(start, swung)).toBeCloseTo(0);
-    expect(twistAboutLocalZ(start, start)).toBeCloseTo(0);
+  it('measures roll about the pointing axis and ignores arm swing', () => {
+    // Hand pointing forward (-Z). Clockwise for the user is a right-handed turn about -Z.
+    const start = quat(1, 0, 0, deg(-50)); // any hand pose convention: here pitched 50 degrees
+    const rolled = mul(quat(0, 0, -1, deg(30)), start); // world roll of 30 degrees, clockwise
+    expect(twistAboutAxis(start, rolled, 0, 0, -1)).toBeCloseTo(deg(30));
+    const rolledBack = mul(quat(0, 0, -1, deg(-50)), start);
+    expect(twistAboutAxis(start, rolledBack, 0, 0, -1)).toBeCloseTo(deg(-50));
+    const swung = mul(quat(1, 0, 0, deg(35)), start); // arm raised: not a twist
+    expect(twistAboutAxis(start, swung, 0, 0, -1)).toBeCloseTo(0);
+    const turned = mul(quat(0, 1, 0, deg(35)), start); // arm swung sideways: not a twist
+    expect(twistAboutAxis(start, turned, 0, 0, -1)).toBeCloseTo(0);
+    expect(twistAboutAxis(start, start, 0, 0, -1)).toBeCloseTo(0);
   });
 
   it('maps twist angle to whole year steps', () => {

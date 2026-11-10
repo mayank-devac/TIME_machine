@@ -11,11 +11,15 @@ export const TIME = {
   /** Wrist twist needed for one year step, radians (about 25 degrees). */
   dialStepRad: (25 * Math.PI) / 180,
   /**
-   * Sign that turns a positive twist about the grip's +Z axis into a year delta. With the
-   * grip's -Z pointing away from the user, a clockwise turn (as the user sees it) is a
-   * negative twist, and clockwise should mean "later", hence -1.
+   * Sign that turns a twist into a year delta. The twist is measured right-handed about the
+   * direction the dial hand points (away from the user), so a clockwise turn, as the user
+   * sees it, is positive, and clockwise means "later".
    */
-  dialDirection: -1,
+  dialDirection: 1,
+
+  /** Wrist dial face: diameter, and how far above the dial hand it floats, metres. */
+  dialSizeM: 0.09,
+  dialLiftM: 0.09,
 
   /** A pinch or trigger must be held this long before push-through starts (ignores taps). */
   pushHoldMs: 300,
