@@ -1,0 +1,26 @@
+[
+  {
+    "id": "184540641340212",
+    "lat": 40.758243084391,
+    "lng": -73.98543732112,
+    "capturedAt": 1694904766000,
+    "heading": 202.74200349563,
+    "imageUrl": "/dev/pano-2023.jpg",
+    "width": 2048,
+    "height": 1024,
+    "creator": "asturksever",
+    "sequenceId": "l83tM6oVjGQTf7JYH9ycDL"
+  },
+  {
+    "id": "1458944986348869",
+    "lat": 40.758031461884,
+    "lng": -73.985529281367,
+    "capturedAt": 1746754743000,
+    "heading": 298.23319832471,
+    "imageUrl": "/dev/pano-2025.jpg",
+    "width": 2048,
+    "height": 1024,
+    "creator": "andreymaznyak",
+    "sequenceId": "xQ0hZvNju3WXKbcq27iwzP"
+  }
+]

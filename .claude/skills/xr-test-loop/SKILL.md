@@ -39,8 +39,23 @@ for the current ones, and add the ones you end up using to the section below.
 
 ## Commands that worked here
 
-(Empty until Phase 0 runs the spikes. Record the real commands and tool calls, with one
-line on what each proved.)
+- `npx @iwsdk/cli dev up`, then poll `npx @iwsdk/cli dev status` until `browserCommandReady`
+  is true (first run downloads Chromium, about two minutes).
+- `xr_accept_session` enters the emulated immersive-ar session; `xr_get_session_status`
+  confirms `sessionMode: immersive-ar`; `xr_look_at` with `{x,y,z}` metres aims the headset
+  (head is at y 1.6); `xr_end_session` leaves.
+- `browser_screenshot` then Read the returned `screenshotPath`. A shot right after a reload is
+  black until the panorama loads; wait or retake.
+- `npx @iwsdk/cli browser reload` reloads; `npx @iwsdk/cli browser logs --count N` reads console
+  output (pipe through grep; the JSON is long). Dev-only hook: `window.__tm` holds
+  `{world, bus, state, services}`, but there is no eval tool, so log from code instead.
+- The managed browser cannot navigate to a URL with a query string. Switch debug modes with a
+  constant in a file (see `src/spikes/active.ts`), save, wait, then reload.
+- Do all file edits before reloading and entering XR: a late hot-reload ends the session.
+- The managed app tab can have a 0x0 window (`innerWidth` 0): `requestAnimationFrame` and
+  layout-dependent code behave oddly there. The editor tab is a different page and its console
+  lines are mixed into the same log; tag your logs with `location.hash`.
+- `npm run dev:down` (or `npx @iwsdk/cli dev down`) stops everything.
 
 ## What to check, per feature
 

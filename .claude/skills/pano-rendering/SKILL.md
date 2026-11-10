@@ -43,6 +43,20 @@ The pano stage is a single inside-out sphere with one material holding `currentT
 
 On desktop the lens direction comes from the mouse ray, so the effect works with no headset.
 
+## Conventions fixed in Phase 0
+
+- World space: north is -Z, east +X, up +Y. Headings are degrees clockwise from north.
+- A panorama's centre column looks toward its heading, so
+  `u = 0.5 + (azimuth - heading) / 2pi` with `azimuth = atan(d.x, -d.z)`. This is what
+  `src/mocks/mock-stage.ts` does. **Unproven against the fixtures**; Track B must flip between
+  `public/dev/pano-2023.jpg` and `pano-2025.jpg` and confirm a building keeps its direction.
+- The stage sphere is centred on the camera each frame (`onBeforeRender`), radius
+  `config.sphereRadiusM`, `depthWrite: false`, `renderOrder: -1000`. In an AR session it
+  fully replaces the emulated room and the hands still draw over it (seen in the emulator).
+- App content is created with `world.createTransformEntity(obj, { persistent: true })`.
+  Without it the entity is tagged to the level and parented to it.
+- MapLibre canvas size must be pinned (`clientWidth/Height` override); see `docs/spikes.md`.
+
 ## Alignment between years
 
 Two captures of the same street were taken facing different ways, a few metres apart.

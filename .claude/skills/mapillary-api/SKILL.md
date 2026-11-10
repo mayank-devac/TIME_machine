@@ -99,16 +99,24 @@ Filter the map layer to `is_pano == true` so users only see streets they can act
 - Show credit wherever an image is visible: "© Mapillary" plus the image's
   `creator.username`. The map also needs the OpenStreetMap credit.
 
-## Not yet proven (Phase 0 spikes record the answers in `docs/spikes.md`)
+## Proven in Phase 0 (see `docs/spikes.md`)
 
-- Whether `thumb_*_url` responses carry CORS headers that allow use as a WebGL texture.
-- Whether those URLs expire (if so, re-fetch the entity before loading, and never store URLs
-  in `spots.json`; store image ids).
-- Exact rate limits. An unconfirmed summary gave 60,000/min for entities, 10,000/min for
-  search and 50,000/day for tiles. Treat the tile figure as the tight one.
-- The exact licence wording for imagery. Commonly described as CC-BY-SA; confirm before
-  writing the credits screen.
-- The exact bbox rule: the docs say "smaller than 0.01 degrees square" but show a wider
-  sample. Stay under 0.01° on each side.
+- Image URLs (`thumb_*_url`) are CORS-open (`access-control-allow-origin: *`), so a normal
+  `fetch()` then `createImageBitmap` works. Tile, OpenFreeMap, Photon and Commons endpoints are
+  CORS-open too.
+- **Image URLs expire** after about 30 days (hex Unix time in the `oe` parameter). Store ids,
+  never URLs; call `PanoSource.resolve(id)` for fresh ones.
+- `camera_type` for panoramas is `spherical`. Filter on `is_pano`, not on camera type.
+- Sizes seen: 5760x2880 and 7680x3840. Radius search at Times Square returned 34 panoramas
+  from three different years.
+- Rate limits (from the docs): entity 60,000/min, search 10,000/min, **tiles 50,000/day**.
+  The tile quota is the one a map can burn through: do not redraw or refetch tiles needlessly.
 
-Once a spike settles one of these, move it out of this list and into the section it belongs to.
+## Not yet proven
+
+- The licence wording for imagery (commonly described as CC-BY-SA; the API page does not say).
+  Until confirmed, credit "© Mapillary" and the creator's username.
+- The exact bbox rule: docs say "smaller than 0.01 degrees square" but show a wider sample.
+  Stay under 0.01 degrees on each side.
+- Whether any year other than the ones seen at Times Square is common elsewhere; Track A's
+  spot validation script will find out.
