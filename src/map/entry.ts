@@ -5,10 +5,12 @@ import { TableMap } from './table.js';
 /**
  * Dev evidence switches. Both must be false when committed for integration.
  *  - DEV_TRACE logs table events (pan, pick, redraws, canvas fingerprint) with a "MAPTRACK" tag.
- *  - DEV_SCRIPT also types "Times Square" into the landing search on start.
+ *  - DEV_SCRIPT (needs DEV_TRACE) types "Times Square" into the landing search on start, and on
+ *    entering XR logs stats at +0 s and +8 s, pans 500,300 px at +9 s and logs again at +12 s
+ *    (the in-session redraw proof described in README.md).
  */
-const DEV_TRACE = true;
-const DEV_SCRIPT = true;
+const DEV_TRACE = false;
+const DEV_SCRIPT = false;
 
 export interface MapTrack extends Track, MapTable {
   readonly table: TableMap;
@@ -52,6 +54,8 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
   syncLanding();
 
   let timer: ReturnType<typeof setInterval> | null = null;
+  const devTimers: Array<ReturnType<typeof setTimeout>> = [];
+  let disposedDev = false;
   const offTrace: Array<() => void> = [];
   if (import.meta.env.DEV && DEV_TRACE) {
     const tag = (): string => location.hash || 'app';
@@ -65,7 +69,32 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
       console.log(`MAPTRACK ${tag()} stats ${JSON.stringify({ ...table.stats(), fp: table.fingerprint() })}`);
     }, 4000);
     (window as unknown as { __map: unknown }).__map = { table, landing };
-    if (DEV_SCRIPT) setTimeout(() => landing.searchNow('Times Square'), 1500);
+    if (DEV_SCRIPT) {
+      setTimeout(() => landing.searchNow('Times Square'), 1500);
+      // XR redraw proof: does the window's requestAnimationFrame keep running in the session,
+      // and does a pan made during the session reach the table texture?
+      let rafCount = 0;
+      const raf = (): void => {
+        rafCount++;
+        if (!disposedDev) requestAnimationFrame(raf);
+      };
+      requestAnimationFrame(raf);
+      const snap = (label: string): void =>
+        console.log(`MAPTRACK ${tag()} ${label} ${JSON.stringify({ rafCount, ...table.stats(), fp: table.fingerprint() })}`);
+      const onStart = (): void => {
+        snap('xr-start');
+        devTimers.push(
+          setTimeout(() => snap('xr-before-pan'), 8000),
+          setTimeout(() => {
+            table.panPixels(500, 300);
+            snap('xr-pan-issued');
+          }, 9000),
+          setTimeout(() => snap('xr-after-pan'), 12000),
+        );
+      };
+      xr.addEventListener('sessionstart', onStart);
+      offTrace.push(() => xr.removeEventListener('sessionstart', onStart));
+    }
   }
 
   return {
@@ -76,6 +105,8 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
     flyTo: (lat, lng, zoom) => table.flyTo(lat, lng, zoom),
     dispose() {
       if (timer) clearInterval(timer);
+      disposedDev = true;
+      devTimers.forEach((t) => clearTimeout(t));
       offTrace.forEach((off) => off());
       offMode();
       xr.removeEventListener('sessionstart', onSession);

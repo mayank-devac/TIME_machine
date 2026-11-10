@@ -53,16 +53,22 @@ const COVERAGE_LAYER = 'mly-pano-sequences';
 const SNAP_PX = 48;
 /** Distance of the table centre in front of the standing player, metres (north is -Z). */
 const TABLE_Z = -0.62;
+/** Stop pending-tile redraws when MapLibre has reported no new data for this long, ms. */
+const PENDING_QUIET_MS = 3000;
 
 export interface TableStats {
   styleLoaded: boolean;
   tilesLoaded: boolean;
   redraws: number;
   uploads: number;
+  /** Uploads of frames MapLibre drew on its own (window requestAnimationFrame). */
+  selfUploads: number;
   inXR: boolean;
   view: MapView;
   canvas: string;
   error: string | null;
+  /** Per-source load state, e.g. "openmaptiles:ok,mapillary:loading". */
+  sources: string;
 }
 
 interface SpotsData {
@@ -100,6 +106,8 @@ export class TableMap implements MapTable {
   private selfRendered = false;
   private inRedraw = false;
   private uploads = 0;
+  private lastDataAt = 0;
+  private selfUploads = 0;
   private error: string | null = null;
   private visible = true;
   private disposed = false;
@@ -213,10 +221,16 @@ export class TableMap implements MapTable {
       tilesLoaded: !!m?.loaded(),
       redraws: this.scheduler.count,
       uploads: this.uploads,
+      selfUploads: this.selfUploads,
       inXR: !!this.world.session,
       view: { ...this.view },
       canvas: m ? `${m.getCanvas().width}x${m.getCanvas().height}` : 'none',
       error: this.error,
+      sources: m?.style
+        ? Object.keys(m.getStyle()?.sources ?? {})
+            .map((id) => `${id}:${m.isSourceLoaded(id) ? 'ok' : 'loading'}`)
+            .join(',')
+        : '',
     };
   }
 
@@ -340,10 +354,14 @@ export class TableMap implements MapTable {
       // Missing POI sprite icons in the OpenFreeMap style are harmless (see docs/spikes.md).
       if (/could not be loaded/i.test(msg)) return;
       this.error = msg;
-      this.log('map-error', msg);
+      const ev = e as unknown as { sourceId?: string; tile?: { tileID?: { canonical?: unknown } } };
+      this.log('map-error', { msg, source: ev.sourceId, tile: ev.tile?.tileID?.canonical });
     });
     map.on('styleimagemissing', () => {});
-    map.on('data', () => this.scheduler.markDirty());
+    map.on('data', () => {
+      this.lastDataAt = performance.now();
+      this.scheduler.markDirty();
+    });
     map.on('render', () => {
       if (!this.inRedraw) this.selfRendered = true;
     });
@@ -448,8 +466,11 @@ export class TableMap implements MapTable {
     const m = this.map;
     const tex = this.texture;
     if (!m || !tex || !this.visible) return;
-    this.scheduler.setPending(!m.loaded());
-    if (this.scheduler.due(performance.now())) {
+    const now = performance.now();
+    // Keep polling while tiles arrive, but stop after a quiet spell so a stalled tile request
+    // does not keep re-uploading a 2048 px texture several times a second forever.
+    this.scheduler.setPending(!m.loaded() && now - this.lastDataAt < PENDING_QUIET_MS);
+    if (this.scheduler.due(now)) {
       this.inRedraw = true;
       try {
         m.redraw();
@@ -464,6 +485,7 @@ export class TableMap implements MapTable {
       this.selfRendered = false;
       tex.needsUpdate = true;
       this.uploads++;
+      this.selfUploads++;
     }
   }
 
