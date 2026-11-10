@@ -73,14 +73,16 @@ export function deriveHud({ state, yearsKnown }: HudInputs): HudView {
   const inScene = state.mode === 'street' || state.mode === 'portal';
   const enabled = inScene && canUseTimeMachine(state.years, state.pano !== null);
   const presentYear = state.pano ? yearOf(state.pano) : null;
-  const shown = state.timeOn && state.year !== null ? state.year : presentYear;
+  // A lens that is "on" at a spot with nothing earlier is stale state; show the present.
+  const lensOn = state.timeOn && enabled;
+  const shown = lensOn && state.year !== null ? state.year : presentYear;
   return {
     showTimeButton: inScene,
     timeButtonEnabled: enabled,
-    timeButtonLabel: state.timeOn ? 'BACK TO NOW' : 'TIME MACHINE',
+    timeButtonLabel: lensOn ? 'BACK TO NOW' : 'TIME MACHINE',
     showYear: inScene,
     yearText: shown === null ? '----' : String(shown),
-    yearIsPast: state.timeOn && state.year !== null,
+    yearIsPast: lensOn && state.year !== null,
     showPortalButton: inScene,
     portalButtonLabel: state.mode === 'portal' ? 'BACK' : 'PORTAL',
     portalTarget: state.mode === 'portal' ? 'street' : 'portal',

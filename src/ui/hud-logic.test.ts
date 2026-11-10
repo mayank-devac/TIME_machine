@@ -186,3 +186,15 @@ describe('placement', () => {
     expect(out.z).toBeCloseTo(0);
   });
 });
+
+describe('stale lens state', () => {
+  it('shows the present and the plain label when the lens is on but nothing earlier exists', () => {
+    const v = deriveHud({
+      state: { mode: 'street', pano: pano('a', 2025), years: [2025], timeOn: true, year: 2023 },
+      yearsKnown: true,
+    });
+    expect(v.timeButtonLabel).toBe('TIME MACHINE');
+    expect(v.yearText).toBe('2025');
+    expect(v.yearIsPast).toBe(false);
+  });
+});

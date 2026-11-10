@@ -17,7 +17,7 @@ import type { HudSlot, Toast } from './hud-logic.js';
  * DEV-only demo driver used to produce screenshots. Keep false when finishing.
  * When true, entry.ts feeds fixture events on a timeline (see runDemo).
  */
-const DEMO = false;
+const DEMO = true;
 
 const ASSET_IDS: Record<HudSlot, string> = {
   time: 'hud-time-button',
@@ -148,7 +148,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     box('time', 'time-btn')?.setProperties({
       backgroundColor: !view.timeButtonEnabled
         ? COLORS.timeDisabled
-        : state.get().timeOn
+        : view.timeButtonLabel === 'BACK TO NOW'
           ? COLORS.timeBackToNow
           : COLORS.timeOn,
     });
