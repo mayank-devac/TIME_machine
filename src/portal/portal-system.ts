@@ -1,5 +1,6 @@
 import { Grabbed, Hovered, Pressed, Vector3, createSystem } from '@iwsdk/core';
 import { PortalFrameTag } from '../track-components.js';
+import { readHead } from './head.js';
 import type { PortalFlow } from './portal-flow.js';
 import { CrossingDetector } from './portal-logic.js';
 import { SLOT } from './portal-window.js';
@@ -14,6 +15,9 @@ const HAND_CROSSING = { roomMargin: 0.05, streetDepth: 0.12, inset: 0.08 };
 export interface PortalSystemTarget {
   flow: PortalFlow;
   window: PortalWindow;
+  /** Set true to re-place the window in front of the head on the next frame (session start). */
+  needsPlacement: boolean;
+  place(): void;
 }
 
 /**
@@ -76,11 +80,16 @@ export class PortalSystem extends createSystem({
       this.resetDetectors();
     }
     if (!open || !t || this.queries.grabbed.entities.size > 0) return;
+    if (t.needsPlacement) {
+      t.needsPlacement = false;
+      t.place();
+      this.resetDetectors();
+    }
 
     t.window.syncPlane();
     const plane = t.window.plane;
 
-    this.world.camera.getWorldPosition(this.head);
+    readHead(this.world, this.head);
     if (this.headDetector.update(plane, this.head)) {
       t.flow.enterStreet('head');
       return;

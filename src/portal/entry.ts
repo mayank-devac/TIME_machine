@@ -3,6 +3,7 @@ import type { Entity, Object3D } from '@iwsdk/core';
 import type { Portal, Track, TrackContext, TrackFactory } from '../contracts.js';
 import { PortalFrameTag } from '../track-components.js';
 import { PORTAL_DEV_DEMO, runDevDemo } from './dev-demo.js';
+import { readHead } from './head.js';
 import { PortalFlow } from './portal-flow.js';
 import { placeInFrontOfHead } from './portal-logic.js';
 import type { Placement } from './portal-logic.js';
@@ -58,8 +59,7 @@ export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
   const forward = new Vector3();
   const placement: Placement = { position: new Vector3(), yaw: 0 };
   const placeWindow = (): void => {
-    world.camera.getWorldPosition(head);
-    world.camera.getWorldDirection(forward);
+    readHead(world, head, forward);
     placeInFrontOfHead(head, forward, OPEN_DISTANCE_M, OPEN_DROP_M, placement);
     win.root.position.copy(placement.position as Vector3);
     win.root.rotation.set(0, placement.yaw, 0);
@@ -82,7 +82,14 @@ export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
 
   world.registerSystem(PortalSystem);
   const system = world.getSystem(PortalSystem)!;
-  system.target = { flow, window: win };
+  const target = { flow, window: win, needsPlacement: false, place: placeWindow };
+  system.target = target;
+  // The head jumps when a session starts or ends; put the open window back in front of it.
+  const replace = (): void => {
+    target.needsPlacement = true;
+  };
+  world.renderer.xr.addEventListener('sessionstart', replace);
+  world.renderer.xr.addEventListener('sessionend', replace);
 
   if (import.meta.env.DEV) {
     const attrs = world.renderer.getContext().getContextAttributes();
@@ -101,6 +108,8 @@ export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
     },
     dispose() {
       system.target = null;
+      world.renderer.xr.removeEventListener('sessionstart', replace);
+      world.renderer.xr.removeEventListener('sessionend', replace);
       world.unregisterSystem(PortalSystem);
       flow.dispose();
       for (const e of children) e.dispose();

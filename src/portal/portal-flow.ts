@@ -71,8 +71,11 @@ export class PortalFlow {
   /** Stepped or pushed through, or pressed the window: ask for the full street. */
   enterStreet(reason: EnterReason): boolean {
     if (this.mode !== 'portal') return false;
+    // Set before emitting: the flow may answer synchronously, closing the window mid-call.
+    const previous = this.lastEnterReason;
+    this.lastEnterReason = reason;
     const sent = this.request('street');
-    if (sent) this.lastEnterReason = reason;
+    if (!sent) this.lastEnterReason = previous;
     return sent;
   }
 
