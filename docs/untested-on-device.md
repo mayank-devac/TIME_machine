@@ -14,3 +14,7 @@ Add to this list; do not remove items without a device test.
 - Text legibility of the year label, credit line and map labels at headset resolution.
 - Sharpness of the chosen texture caps.
 - Cold-start load time over a real Wi-Fi connection (a 7680 px panorama is about 3.3 MB).
+- Archive photo frames (Track F): text legibility (credit line is about 0.5 degrees tall at
+  2 m, may be too small), arc width and overlap on Quest field of view, memory and frame rate
+  with six ~800x1000 canvas textures. Hide path and fade timing were not exercised in a
+  running session.
