@@ -9,7 +9,7 @@ import { BASE_MAP_KINDS, TableMap, type BaseMapKind } from './table.js';
  *    entering XR logs stats at +0 s and +8 s, pans 500,300 px at +9 s and logs again at +12 s
  *    (the in-session redraw proof described in README.md).
  */
-const DEV_TRACE = true;
+const DEV_TRACE = false;
 const DEV_SCRIPT = false;
 
 export interface MapTrack extends Track, MapTable {

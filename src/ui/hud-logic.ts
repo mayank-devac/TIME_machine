@@ -129,6 +129,48 @@ export function yearChipAction(chip: YearChip, timeOn: boolean): YearChipAction 
 }
 
 // ---------------------------------------------------------------------------------------------
+// Places list (room only): curated spots that have past imagery
+// ---------------------------------------------------------------------------------------------
+
+export const PLACES_PER_PAGE = 5;
+
+export interface PlaceRow {
+  name: string;
+  /** "2016-2025" or "2016" when there is a single year. Plain ASCII. */
+  yearsText: string;
+  index: number;
+}
+
+export interface PlacesPage {
+  rows: PlaceRow[];
+  page: number;
+  pageCount: number;
+  pageText: string;
+}
+
+export const showPlacesPanel = (mode: Mode): boolean => mode === 'table';
+export const showMapButton = (mode: Mode): boolean => mode === 'street' || mode === 'portal';
+
+/** Spots with at least two years first (those are the ones the time machine works at). */
+export function placesPage(
+  spots: ReadonlyArray<{ name: string; years: readonly number[] }>,
+  requestedPage: number,
+): PlacesPage {
+  const order = spots
+    .map((s, index) => ({ s, index }))
+    .sort((a, b) => Number(b.s.years.length >= 2) - Number(a.s.years.length >= 2) || a.index - b.index);
+  const pageCount = Math.max(1, Math.ceil(order.length / PLACES_PER_PAGE));
+  const page = Math.min(Math.max(0, Math.floor(requestedPage)), pageCount - 1);
+  const rows = order.slice(page * PLACES_PER_PAGE, (page + 1) * PLACES_PER_PAGE).map(({ s, index }) => {
+    const ys = [...s.years].sort((a, b) => a - b);
+    const yearsText =
+      ys.length === 0 ? '' : ys.length === 1 ? String(ys[0]) : `${ys[0]}-${ys[ys.length - 1]}`;
+    return { name: s.name.split(',')[0]!.trim(), yearsText, index };
+  });
+  return { rows, page, pageCount, pageText: `${page + 1} / ${pageCount}` };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Busy scopes (spinner)
 // ---------------------------------------------------------------------------------------------
 
@@ -252,7 +294,16 @@ export class ToastQueue {
 // Placement (pure maths; entry.ts applies it to the panels)
 // ---------------------------------------------------------------------------------------------
 
-export type HudSlot = 'time' | 'year' | 'years' | 'credits' | 'status' | 'portal' | 'info';
+export type HudSlot =
+  | 'time'
+  | 'year'
+  | 'years'
+  | 'credits'
+  | 'status'
+  | 'portal'
+  | 'info'
+  | 'places'
+  | 'map';
 
 export interface SlotSpec {
   /** Degrees to the left of the user's forward direction (negative is right). */
@@ -271,6 +322,10 @@ export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
   years: { leftDeg: 32, distance: 1.4, dy: -0.37 },
   year: { leftDeg: -32, distance: 1.4, dy: -0.05 },
   portal: { leftDeg: -32, distance: 1.4, dy: -0.4 },
+  // Room (table mode) list of places, beside the map table. Street mode never shows it.
+  places: { leftDeg: 42, distance: 1.3, dy: -0.1 },
+  // Same spot as the PORTAL button's neighbour: just below it.
+  map: { leftDeg: -32, distance: 1.4, dy: -0.55 },
 };
 
 export interface Vec3Like {

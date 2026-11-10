@@ -13,7 +13,12 @@ import {
   yearChips,
   slotPosition,
   yawFromForward,
+  PLACES_PER_PAGE,
+  placesPage,
+  showMapButton,
+  showPlacesPanel,
 } from './hud-logic.js';
+import type { PlacesPage } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
 
 const ASSET_IDS: Record<HudSlot, string> = {
@@ -24,6 +29,8 @@ const ASSET_IDS: Record<HudSlot, string> = {
   status: 'hud-status',
   portal: 'hud-portal-button',
   info: 'hud-info-button',
+  places: 'hud-places',
+  map: 'hud-map-button',
 };
 
 interface Panel {
@@ -159,7 +166,30 @@ export const createTrack: TrackFactory = async (ctx) => {
     }
   };
 
+  // Room panel: curated places that have past imagery. Click a row to enter that street.
+  const spots = ctx.services.source.spots();
+  let placesPageIndex = 0;
+  let placesView: PlacesPage = placesPage(spots, 0);
+  const refreshPlaces = (): void => {
+    const mode = state.get().mode;
+    setVisible('places', showPlacesPanel(mode));
+    setVisible('map', showMapButton(mode));
+    if (!showPlacesPanel(mode)) return;
+    placesView = placesPage(spots, placesPageIndex);
+    placesPageIndex = placesView.page;
+    for (let i = 0; i < PLACES_PER_PAGE; i++) {
+      const row = placesView.rows[i];
+      box('places', `place-row-${i}`)?.setProperties({ display: row ? 'flex' : 'none' });
+      if (row) {
+        text('places', `place-name-${i}`)?.setProperties({ text: row.name });
+        text('places', `place-years-${i}`)?.setProperties({ text: row.yearsText });
+      }
+    }
+    text('places', 'places-page')?.setProperties({ text: placesView.pageText });
+  };
+
   const refreshHud = (): void => {
+    refreshPlaces();
     const view = deriveHud({ state: state.get(), yearsKnown });
     setVisible('time', view.showTimeButton);
     setVisible('year', view.showYear);
@@ -205,7 +235,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     asset.name = `hud-${slot}`;
     const entity = world.createTransformEntity(asset, { persistent: true });
     entity.addComponent(HudTag, { slot });
-    if (slot === 'time' || slot === 'portal' || slot === 'info' || slot === 'years') entity.addComponent(RayInteractable);
+    if (['time', 'portal', 'info', 'years', 'places', 'map'].includes(slot)) entity.addComponent(RayInteractable);
     asset.visible = slot === 'info';
     panels.set(slot, { entity, asset, object: asset });
   }
@@ -236,6 +266,24 @@ export const createTrack: TrackFactory = async (ctx) => {
     el?.addEventListener('click', handler);
     offs.push(() => el?.removeEventListener('click', handler));
   }
+  const listen = (el: ReturnType<typeof box>, handler: () => void): void => {
+    el?.addEventListener('click', handler);
+    offs.push(() => el?.removeEventListener('click', handler));
+  };
+  for (let i = 0; i < PLACES_PER_PAGE; i++) {
+    listen(box('places', `place-row-${i}`), () => {
+      const row = placesView.rows[i];
+      const spot = row ? spots[row.index] : undefined;
+      if (spot) bus.emit('spot:selected', { lat: spot.lat, lng: spot.lng, label: spot.name });
+    });
+  }
+  const turnPage = (delta: number): void => {
+    placesPageIndex = (placesView.page + delta + placesView.pageCount) % placesView.pageCount;
+    refreshPlaces();
+  };
+  listen(box('places', 'places-prev'), () => turnPage(-1));
+  listen(box('places', 'places-next'), () => turnPage(1));
+  listen(box('map', 'map-btn'), () => bus.emit('mode:requested', { mode: 'table' }));
   const timeBtn = box('time', 'time-btn');
   const portalBtn = box('portal', 'portal-btn');
   timeBtn?.addEventListener('click', onTimeClick);

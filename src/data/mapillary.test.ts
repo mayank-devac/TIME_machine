@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { config } from '../config.js';
 import { MapillaryClient } from './mapillary.js';
 import spots from './spots.json';
+import spotsMeta from './spots.meta.json';
 
 const Y = (year: number, month = 5): number => Date.UTC(year, month, 10);
 
@@ -45,8 +46,9 @@ function setup(handler: (url: URL) => unknown | Promise<unknown>) {
 
 describe('yearsAt', () => {
   it('groups by year and keeps the nearest per year', async () => {
+    const m = config.maxYearOffsetMetres;
     const { client } = setup(() => ({
-      data: [raw(1, 2022, 30), raw(2, 2022, 5), raw(3, 2023, 10), raw(4, 2025, 20)],
+      data: [raw(1, 2022, m * 0.9), raw(2, 2022, m * 0.25), raw(3, 2023, m * 0.5), raw(4, 2025, m * 0.75)],
     }));
     const years = await client.yearsAt(40.758, -73.9855);
     expect([...years.keys()]).toEqual([2022, 2023, 2025]);
@@ -216,6 +218,11 @@ describe('throttling', () => {
 });
 
 describe('spots.json', () => {
+  it('was built at the offset limit the runtime enforces', () => {
+    // Fails when config.maxYearOffsetMetres changes: re-run `node src/data/build-spots.mjs`.
+    expect(spotsMeta.maxOffsetM).toBe(config.maxYearOffsetMetres);
+  });
+
   it('has 20 to 30 entries, each with at least 3 years and a pano id, and no URLs', () => {
     expect(spots.length).toBeGreaterThanOrEqual(20);
     expect(spots.length).toBeLessThanOrEqual(30);

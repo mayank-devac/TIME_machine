@@ -35,7 +35,8 @@ node src/data/build-spots.mjs
 ```
 
 Parses `VITE_MAPILLARY_TOKEN` from `.env.local` (never sourced, never printed), queries each candidate
-year by year, keeps spots with at least 3 years of panoramas within 40 m, writes up to 30 that pass (4 requests in parallel, saves after each accepted spot).
+year by year, keeps spots with at least 3 years of panoramas within `config.maxYearOffsetMetres` of the spot's own panorama (the value is read from `src/config.ts`), writes up to 30 that pass (4 requests in parallel, saves after each accepted spot).
+Every run re-checks all candidates; `--resume` continues an interrupted run. It also writes `spots.meta.json`, which records the limit used; a test fails if that differs from the config, so re-run the script after changing the limit.
 It takes a few minutes (about 13 requests per candidate at 120 ms apart).
 
 ## Tests

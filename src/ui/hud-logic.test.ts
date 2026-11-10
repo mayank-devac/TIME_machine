@@ -230,3 +230,32 @@ describe('year chips', () => {
     expect(yearChipAction(a, true)).toEqual({ kind: 'goto', year: 2020, openLens: false });
   });
 });
+
+describe('places list', () => {
+  const spots = Array.from({ length: 12 }, (_, i) => ({
+    name: `Spot ${i}, City`,
+    years: i === 0 ? [2020] : [2016, 2020, 2025],
+  }));
+
+  it('pages five at a time and puts single-year spots last', async () => {
+    const { placesPage } = await import('./hud-logic.js');
+    const first = placesPage(spots, 0);
+    expect(first.rows).toHaveLength(5);
+    expect(first.pageText).toBe('1 / 3');
+    expect(first.rows[0]).toMatchObject({ name: 'Spot 1', yearsText: '2016-2025', index: 1 });
+    const last = placesPage(spots, 99);
+    expect(last.page).toBe(2);
+    expect(last.rows[last.rows.length - 1]).toMatchObject({ name: 'Spot 0', yearsText: '2020' });
+  });
+
+  it('handles an empty list', async () => {
+    const { placesPage } = await import('./hud-logic.js');
+    expect(placesPage([], 3)).toMatchObject({ rows: [], page: 0, pageText: '1 / 1' });
+  });
+
+  it('shows the list in the room and MAP in street and portal', async () => {
+    const { showMapButton, showPlacesPanel } = await import('./hud-logic.js');
+    expect([showPlacesPanel('table'), showPlacesPanel('street')]).toEqual([true, false]);
+    expect([showMapButton('table'), showMapButton('street'), showMapButton('portal')]).toEqual([false, true, true]);
+  });
+});

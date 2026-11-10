@@ -7,7 +7,7 @@ export const config = {
   /** Mapillary search radius cap is 50 m. */
   searchRadiusM: 50,
   /** Skip a year whose nearest panorama is farther than this from the spot. */
-  maxYearOffsetMetres: 40,
+  maxYearOffsetMetres: 12,
   /** Minimum gap between Mapillary search requests, ms. Tile quota is 50,000/day. */
   minRequestIntervalMs: 120,
 

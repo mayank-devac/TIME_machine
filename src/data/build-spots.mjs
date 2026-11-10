@@ -4,7 +4,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const MAX_OFFSET_M = 40; // keep in sync with config.maxYearOffsetMetres
+// Single source of truth: read the limit the runtime enforces straight from src/config.ts.
+const MAX_OFFSET_M = (() => {
+  const src = readFileSync(fileURLToPath(new URL('../config.ts', import.meta.url)), 'utf8');
+  const m = /maxYearOffsetMetres:\s*(\d+(?:\.\d+)?)/u.exec(src);
+  if (!m) throw new Error('maxYearOffsetMetres not found in src/config.ts');
+  return Number(m[1]);
+})();
 const MIN_YEARS = 3;
 const TARGET = 30;
 const INTERVAL_MS = 120;
@@ -156,10 +162,12 @@ function dist(aLat, aLng, bLat, bLng) {
 const FIELDS = 'id,captured_at,computed_geometry,geometry';
 const thisYear = new Date().getUTCFullYear();
 const HALF_BOX_DEG = 0.0012; // about 270 m box; larger boxes make dense cities fail with "reduce the amount of data"
-const MAX_ANCHORS = 400;
 
 // The named coordinate is rarely on a street Mapillary covers, so search a box around it
-// and anchor the spot on the panorama that has the most distinct years within MAX_OFFSET_M.
+// and anchor the spot on a panorama. Years are measured from that panorama's own position, which
+// is what the runtime does (yearsAt at the shown pano), so a spot that passes here opens with the
+// same years. Every panorama is tried as an anchor. Among anchors with at least MIN_YEARS the
+// newest capture wins (the spot opens on current imagery), then most years, then nearest the name.
 async function check([name, lat0, lng0]) {
   const all = []; // {id, year, lat, lng}
   const queryYears = [];
@@ -185,43 +193,51 @@ async function check([name, lat0, lng0]) {
       all.push({ id: String(img.id), year: new Date(img.captured_at).getUTCFullYear(), lat: c[1], lng: c[0] });
     }
   }
-  const stride = Math.max(1, Math.floor(all.length / MAX_ANCHORS));
+  const latTol = MAX_OFFSET_M / 111_000; // cheap reject before the haversine
+  const rank = (x) => [x.score >= MIN_YEARS ? 1 : 0, x.score >= MIN_YEARS ? x.a.year : 0, x.score, -x.centre];
+  const better = (x, y) => {
+    const rx = rank(x);
+    const ry = rank(y);
+    for (let i = 0; i < rx.length; i++) if (rx[i] !== ry[i]) return rx[i] > ry[i];
+    return false;
+  };
   let bestAnchor = null;
-  for (let i = 0; i < all.length; i += stride) {
-    const a = all[i];
-    const nearest = new Map(); // year -> {id, d}
+  for (const a of all) {
+    const years = new Set();
     for (const p of all) {
-      const d = dist(a.lat, a.lng, p.lat, p.lng);
-      if (d > MAX_OFFSET_M) continue;
-      const cur = nearest.get(p.year);
-      if (!cur || d < cur.d) nearest.set(p.year, { id: p.id, d });
+      if (Math.abs(p.lat - a.lat) > latTol) continue;
+      if (dist(a.lat, a.lng, p.lat, p.lng) <= MAX_OFFSET_M) years.add(p.year);
     }
-    const score = nearest.size;
-    const centre = dist(lat0, lng0, a.lat, a.lng);
-    if (!bestAnchor || score > bestAnchor.score || (score === bestAnchor.score && centre < bestAnchor.centre)) {
-      bestAnchor = { score, centre, a, nearest };
-    }
+    const cand = { score: years.size, centre: dist(lat0, lng0, a.lat, a.lng), a, years };
+    if (!bestAnchor || better(cand, bestAnchor)) bestAnchor = cand;
   }
-  if (!bestAnchor) return { name, lat: lat0, lng: lng0, years: [], best: new Map() };
-  const years = [...bestAnchor.nearest.keys()].sort((x, y) => x - y);
-  const best = new Map();
-  for (const y of years) best.set(y, { id: bestAnchor.nearest.get(y).id });
-  return { name, lat: bestAnchor.a.lat, lng: bestAnchor.a.lng, years, best, centre: bestAnchor.centre };
+  if (!bestAnchor) return { name, lat: lat0, lng: lng0, years: [] };
+  const { a } = bestAnchor;
+  const years = [...bestAnchor.years].sort((x, y) => x - y);
+  return { name, lat: a.lat, lng: a.lng, panoId: a.id, years, centre: bestAnchor.centre };
 }
 
-// Resume: keep spots already verified in an earlier run, only check candidates not yet accepted.
+// Every run re-checks every candidate, so the whole file is verified at the current limit.
+// Pass --resume to continue an interrupted run; it is refused if the limit changed in between.
 const SPOTS_FILE = fileURLToPath(new URL('./spots.json', import.meta.url));
+const META_FILE = fileURLToPath(new URL('./spots.meta.json', import.meta.url));
+const args = process.argv.slice(2);
 let accepted = [];
-try {
+if (args.includes('--resume')) {
+  const meta = JSON.parse(readFileSync(META_FILE, 'utf8'));
+  if (meta.maxOffsetM !== MAX_OFFSET_M) {
+    throw new Error(`spots.json was built at ${meta.maxOffsetM} m, config says ${MAX_OFFSET_M} m; run without --resume`);
+  }
   accepted = JSON.parse(readFileSync(SPOTS_FILE, 'utf8'));
-} catch {
-  accepted = [];
 }
 const have = new Set(accepted.map((s) => s.name));
-// Optional first argument: index of the first candidate to check (skip ones already rejected in earlier runs).
-const START = Number(process.argv[2] ?? 0) || 0;
+// Optional numeric argument: index of the first candidate to check (skip ones already rejected in earlier runs).
+const START = Number(args.find((x) => /^\d+$/u.test(x)) ?? 0);
 const queue = CANDIDATES.slice(START).filter((c) => !have.has(c[0]));
-const save = () => writeFileSync(SPOTS_FILE, JSON.stringify(accepted, null, 2) + '\n');
+const save = () => {
+  writeFileSync(SPOTS_FILE, JSON.stringify(accepted, null, 2) + '\n');
+  writeFileSync(META_FILE, JSON.stringify({ maxOffsetM: MAX_OFFSET_M, minYears: MIN_YEARS }, null, 2) + '\n');
+};
 async function worker() {
   while (queue.length && accepted.length < TARGET) {
     const cand = queue.shift();
@@ -235,15 +251,14 @@ async function worker() {
     const ok = r.years.length >= MIN_YEARS;
     console.log(`${ok ? 'OK    ' : 'REJECT'} ${r.name}: ${r.years.length} years [${r.years.join(', ')}] anchor ${Math.round(r.centre ?? 0)} m from named point`);
     if (!ok || accepted.length >= TARGET) continue;
-    const latest = r.best.get(r.years[r.years.length - 1]);
-    accepted.push({ name: r.name, lat: +r.lat.toFixed(6), lng: +r.lng.toFixed(6), panoId: latest.id, years: r.years });
+    accepted.push({ name: r.name, lat: +r.lat.toFixed(6), lng: +r.lng.toFixed(6), panoId: r.panoId, years: r.years });
     save(); // keep progress if the run is interrupted
   }
 }
 await Promise.all([worker(), worker(), worker(), worker()]);
 
-writeFileSync(
-  fileURLToPath(new URL('./spots.json', import.meta.url)),
-  JSON.stringify(accepted, null, 2) + '\n',
-);
+// Keep the candidate order so the file does not depend on which worker finished first.
+const order = new Map(CANDIDATES.map((c, i) => [c[0], i]));
+accepted.sort((x, y) => order.get(x.name) - order.get(y.name));
+save();
 console.log(`\nWrote ${accepted.length} spots to src/data/spots.json`);

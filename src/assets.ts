@@ -18,4 +18,6 @@ export default defineAssets({
   'hud-portal-button': uikitml('portal-button.uikitml', 'Portal Button'),
   'hud-year-list': uikitml('year-list.uikitml', 'Year List'),
   'hud-info-button': uikitml('info-button.uikitml', 'Info Button'),
+  'hud-places': uikitml('places.uikitml', 'Places'),
+  'hud-map-button': uikitml('map-button.uikitml', 'Map Button'),
 });
