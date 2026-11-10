@@ -245,7 +245,7 @@ describe('places list', () => {
     expect(first.rows).toHaveLength(5);
     expect(first.pageText).toBe('1 / 3');
     expect(first.rows[0]).toMatchObject({ name: 'Here', yearsText: '2020', index: 0 });
-    expect(first.rows[1]).toMatchObject({ name: '30 m N', yearsText: '2016-2025', index: 1 });
+    expect(first.rows[1]).toMatchObject({ name: '30m N', yearsText: '2016-2025', index: 1 });
     const last = placesPage(places, centre, 99);
     expect(last.page).toBe(2);
     expect(last.rows.map((r) => r.index)).toEqual([10, 11]);
@@ -258,8 +258,8 @@ describe('places list', () => {
 
   it('describes offsets in metres, kilometres and compass points', async () => {
     const { describeOffset } = await import('./hud-logic.js');
-    expect(describeOffset(centre, { lat: centre.lat, lng: centre.lng + 0.002 })).toBe('170 m E');
-    expect(describeOffset(centre, { lat: centre.lat - 0.02, lng: centre.lng })).toBe('2.2 km S');
+    expect(describeOffset(centre, { lat: centre.lat, lng: centre.lng + 0.002 })).toBe('170m E');
+    expect(describeOffset(centre, { lat: centre.lat - 0.02, lng: centre.lng })).toBe('2.2km S');
     expect(describeOffset(centre, { lat: centre.lat + 0.0001, lng: centre.lng })).toBe('Here');
   });
 
@@ -275,6 +275,8 @@ describe('places list', () => {
     const { showMapButton, showPlacesPanel } = await import('./hud-logic.js');
     expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, false]);
     expect(showPlacesPanel('table', 0)).toBe(false);
+    expect(showPlacesPanel('table', 0, true)).toBe(true);
+    expect(showPlacesPanel('street', 0, true)).toBe(false);
     expect([showMapButton('table'), showMapButton('street'), showMapButton('portal')]).toEqual([false, true, true]);
   });
 

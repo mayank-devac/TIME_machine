@@ -11,6 +11,13 @@ import { EventBus, createAppState } from './contracts.js';
 import type { TrackContext } from './contracts.js';
 import { wireFlow } from './flow.js';
 
+// The XR emulator asks for pointer lock on click; the browser refuses it for a moment after the
+// user pressed Esc. That refusal is harmless, so keep it out of the console as an unhandled error.
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason as { name?: string; message?: string } | undefined;
+  if (r?.name === 'SecurityError' && /pointer lock/i.test(r.message ?? '')) e.preventDefault();
+});
+
 World.create(
   document.getElementById('scene-container') as HTMLDivElement,
   projectOptions,

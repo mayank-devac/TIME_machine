@@ -1,5 +1,11 @@
-<div id="search-root" style="display: flex; flex-direction: column; align-items: center; gap: 2; padding: 3; width: 64; background-color: #0f121c99; border-color: #ffffff38; border-width: 0.3; border-radius: 6;">
-  <span id="search-title" style="font-size: 2.8; font-weight: medium; color: #ffffffcc;">SEARCH A PLACE</span>
+<div id="search-root" style="display: flex; flex-direction: column; align-items: center; gap: 2; padding: 3; width: 64; background-color: #0f121c99; border-width: 0; border-radius: 6;">
+  <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; width: 58;">
+    <span id="search-title" style="width: 48; font-size: 2.8; font-weight: medium; color: #ffffffcc; text-align: left;">SEARCH A PLACE</span>
+    <div id="search-visibility" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 8; height: 8; background-color: #ffffff1f; border-width: 0; border-radius: 4; cursor: pointer;">
+      <img src="/assets/hide-svgrepo-com.svg" style="width: 5; height: 5;" />
+    </div>
+  </div>
+  <div id="search-content" style="display: flex; flex-direction: column; align-items: center; gap: 2;">
   <div style="display: flex; flex-direction: row; align-items: center; gap: 1.5; width: 58;">
     <div id="search-box" style="display: flex; flex-direction: row; align-items: center; width: 38; height: 8; padding-left: 3; background-color: #ffffff14; border-color: #ffffff38; border-width: 0.3; border-radius: 4;">
       <span id="search-text" style="font-size: 3; font-weight: medium; color: #ffffff;">Type or speak a place</span>
@@ -55,6 +61,7 @@
   <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 1.5; width: 58;">
     <div id="search-space" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 24; height: 7; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-space-label" style="font-size: 2.6; font-weight: medium; color: #ffffff; text-align: center;">SPACE</span></div>
     <div id="search-enter" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 15; height: 7; background-color: #7c6cff59; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-enter-label" style="font-size: 2.8; font-weight: medium; color: #ffffff; text-align: center;">ENTER</span></div>
-    <div id="search-use" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 15; height: 7; background-color: #2ee6d659; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-use-label" style="font-size: 2.8; font-weight: medium; color: #ffffff; text-align: center;">USE</span></div>
+    <div id="search-use" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 15; height: 7; background-color: #2ee6d659; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-use-label" style="font-size: 2.8; font-weight: medium; color: #ffffff; text-align: center;">OK</span></div>
+  </div>
   </div>
 </div>

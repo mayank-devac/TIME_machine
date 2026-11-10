@@ -257,6 +257,15 @@ describe('clusterPlaces', () => {
     expect(out[0]).toMatchObject({ panoId: 'a', years: [2016, 2020, 2025] });
   });
 
+  it('merges nearby places with different years into one, but not same-year ones', async () => {
+    const { clusterPlaces } = await import('./mapillary.js');
+    const c = { lat: 40.758, lng: -73.9855 };
+    const merged = clusterPlaces([mk('a', 2025, 0), mk('b', 2023, 30)], c, 12, 30);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ panoId: 'a', years: [2023, 2025] });
+    expect(clusterPlaces([mk('a', 2025, 0), mk('b', 2025, 30)], c, 12, 30)).toHaveLength(0);
+  });
+
   it('puts the nearest place first', async () => {
     const { clusterPlaces } = await import('./mapillary.js');
     const panos = [mk('far1', 2025, 400), mk('far2', 2020, 400), mk('near1', 2025, 20), mk('near2', 2020, 20)];

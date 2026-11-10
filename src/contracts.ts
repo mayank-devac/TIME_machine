@@ -235,8 +235,10 @@ export interface PanoSource {
   /**
    * Places with panoramas from 2+ years in a box of about 1 km around the point (the point is
    * snapped to a 0.003 degree grid, so small pans reuse the cache). Nearest to the point first.
+   * `onPartial`, when given, receives the places found so far as each tile arrives (a fresh
+   * lookup only; a cached one just resolves), so a list can fill in before the search ends.
    */
-  placesNear(lat: number, lng: number): Promise<NearbyPlace[]>;
+  placesNear(lat: number, lng: number, onPartial?: (places: NearbyPlace[]) => void): Promise<NearbyPlace[]>;
   /** The curated launch spots. */
   spots(): CuratedSpot[];
 }

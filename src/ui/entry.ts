@@ -187,17 +187,31 @@ export const createTrack: TrackFactory = async (ctx) => {
   let placesCentre: LatLng | null = null;
   let placesZoom: number | null = null;
   let placesLoading = false;
+  let placesDotFrame = 1;
+  let placesDotTimer: ReturnType<typeof setInterval> | null = null;
   let placesToken = 0;
   let placesPageIndex = 0;
   let placesView: PlacesPage = placesPage(places, null, 0);
   const refreshPlaces = (): void => {
+    // Animate the "LOOKING NEARBY..." dots only while a lookup is running.
+    if (placesLoading && placesDotTimer === null) {
+      placesDotTimer = setInterval(() => {
+        placesDotFrame = (placesDotFrame % 3) + 1;
+        refreshPlaces();
+      }, 400);
+    } else if (!placesLoading && placesDotTimer !== null) {
+      clearInterval(placesDotTimer);
+      placesDotTimer = null;
+      placesDotFrame = 1;
+    }
     const mode = state.get().mode;
-    setVisible('places', showPlacesPanel(mode, places.length));
+    const showPlaces = showPlacesPanel(mode, places.length, placesLoading);
+    setVisible('places', showPlaces);
     setVisible('map', showMapButton(mode));
-    if (!showPlacesPanel(mode, places.length)) return;
+    if (!showPlaces) return;
     placesView = placesPage(places, placesCentre, placesPageIndex);
     placesPageIndex = placesView.page;
-    text('places', 'places-title')?.setProperties({ text: placesTitle(placesZoom, placesLoading, places.length) });
+    text('places', 'places-title')?.setProperties({ text: placesTitle(placesZoom, placesLoading, places.length, placesDotFrame) });
     for (let i = 0; i < PLACES_PER_PAGE; i++) {
       const row = placesView.rows[i];
       box('places', `place-row-${i}`)?.setProperties({ display: row ? 'flex' : 'none' });
@@ -224,7 +238,12 @@ export const createTrack: TrackFactory = async (ctx) => {
     placesLoading = true;
     refreshPlaces();
     try {
-      const found = await ctx.services.source.placesNear(lat, lng);
+      const found = await ctx.services.source.placesNear(lat, lng, (partial) => {
+        if (token !== placesToken || disposed) return;
+        places = usablePlaces(partial);
+        placesPageIndex = 0;
+        refreshPlaces();
+      });
       if (token !== placesToken || disposed) return;
       places = usablePlaces(found);
       placesPageIndex = 0;
@@ -237,16 +256,18 @@ export const createTrack: TrackFactory = async (ctx) => {
     refreshPlaces();
   };
 
-  // Room search: type on the panel keyboard or speak, ENTER looks the text up, USE flies the map there.
+  // Room search: type on the panel keyboard or speak, ENTER looks the text up, OK flies the map there.
   const voice = createVoiceInput();
   let query = '';
   let found: PlaceResult[] = [];
   let picked = -1;
   let searchNote = 'Pick a place name, then ENTER.';
+  let searchCollapsed = false;
   let searchToken = 0;
   let searchAbort: AbortController | null = null;
   const refreshSearch = (): void => {
     setVisible('search', showSearchPanel(state.get().mode));
+    box('search', 'search-content')?.setProperties({ display: searchCollapsed ? 'none' : 'flex' });
     const shown = displayText(query, !voice.listening);
     text('search', 'search-text')?.setProperties({
       text: voice.listening && query.length === 0 ? 'Listening…' : shown.text,
@@ -291,7 +312,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       if (mine !== searchToken || disposed) return;
       found = list;
       picked = list.length > 0 ? 0 : -1;
-      searchNote = list.length > 0 ? 'Tap a result, then USE.' : `No places found for "${query}".`;
+      searchNote = list.length > 0 ? 'Tap a result, then OK.' : `No places found for "${query}".`;
     } catch (err) {
       if (mine !== searchToken || disposed || (err as { name?: string }).name === 'AbortError') return;
       found = [];
@@ -308,6 +329,10 @@ export const createTrack: TrackFactory = async (ctx) => {
     found = [];
     picked = -1;
     searchNote = 'Pick a place name, then ENTER.';
+    refreshSearch();
+  };
+  const toggleSearchVisibility = (): void => {
+    searchCollapsed = !searchCollapsed;
     refreshSearch();
   };
   const useResult = (): void => {
@@ -459,6 +484,7 @@ export const createTrack: TrackFactory = async (ctx) => {
   listen(box('search', 'search-enter'), () => void runSearch());
   listen(box('search', 'search-clear'), clearSearch);
   listen(box('search', 'search-use'), useResult);
+  listen(box('search', 'search-visibility'), toggleSearchVisibility);
   listen(box('search', 'search-mic'), toggleMic);
   listen(box('map', 'map-btn'), () => bus.emit('mode:requested', { mode: 'table' }));
   const timeBtn = box('time', 'time-btn');
@@ -551,6 +577,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       offs.forEach((off) => off());
       toasts.dispose();
       if (spinnerTimer !== null) clearInterval(spinnerTimer);
+      if (placesDotTimer !== null) clearInterval(placesDotTimer);
       if (recentreTimer !== null) clearTimeout(recentreTimer);
       for (const { entity, asset } of panels.values()) {
         asset.dispose();

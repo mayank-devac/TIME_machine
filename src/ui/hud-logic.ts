@@ -137,7 +137,7 @@ export const PLACES_PER_PAGE = 5;
 export const PLACES_MIN_ZOOM = 13;
 
 export interface PlaceRow {
-  /** "120 m NE": distance and direction from the map centre. Mapillary gives no place names. */
+  /** "120m NE": distance and direction from the map centre. Mapillary gives no place names. */
   name: string;
   /** "2016-2025" or "2016" when there is a single year. Plain ASCII. */
   yearsText: string;
@@ -152,8 +152,9 @@ export interface PlacesPage {
   pageText: string;
 }
 
-/** The room list shows only when there is at least one place to list. */
-export const showPlacesPanel = (mode: Mode, placeCount: number): boolean => mode === 'table' && placeCount > 0;
+/** The room list shows when there is a place to list, or while a lookup is running. */
+export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false): boolean =>
+  mode === 'table' && (placeCount > 0 || loading);
 
 /** Drops places with a non-finite position or no finite year, so no row can read "NaN". */
 export function usablePlaces<T extends LatLng & { years: readonly number[] }>(places: readonly T[]): T[] {
@@ -165,7 +166,7 @@ export const showMapButton = (mode: Mode): boolean => mode === 'street' || mode 
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 
-/** Distance and compass direction from `from` to `to`, e.g. "120 m NE" or "1.2 km S". */
+/** Distance and compass direction from `from` to `to`, e.g. "120m NE" or "1.2km S". */
 export function describeOffset(from: LatLng, to: LatLng): string {
   if (![from.lat, from.lng, to.lat, to.lng].every(Number.isFinite)) return 'Nearby';
   const rad = Math.PI / 180;
@@ -175,14 +176,15 @@ export function describeOffset(from: LatLng, to: LatLng): string {
   if (d < 15) return 'Here';
   const bearing = (Math.atan2(dx, dy) / rad + 360) % 360;
   const dir = COMPASS[Math.round(bearing / 45) % 8]!;
-  const dist = d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`;
+  const dist = d < 1000 ? `${Math.round(d / 10) * 10}m` : `${(d / 1000).toFixed(1)}km`;
   return `${dist} ${dir}`;
 }
 
 /** The title line: tells the user why the list is empty when it is. */
-export function placesTitle(zoom: number | null, loading: boolean, count: number): string {
+export function placesTitle(zoom: number | null, loading: boolean, count: number, dotFrame = 3): string {
   if (zoom !== null && zoom < PLACES_MIN_ZOOM) return 'ZOOM IN TO FIND PLACES';
-  if (loading) return 'LOOKING NEARBY...';
+  // While loading, the three dots cycle 1 → 2 → 3 (frame is taken modulo 3, 0 counts as 3).
+  if (loading) return `LOOKING NEARBY${'.'.repeat(((dotFrame + 2) % 3) + 1)}`;
   return count === 0 ? 'NO PAST IMAGERY NEARBY' : 'NEARBY, WITH PAST IMAGERY';
 }
 

@@ -27,6 +27,8 @@ const BBOX_LIMIT = 2000;
 const PLACES_HALF_DEG = 0.0045;
 const PLACES_GRID_DEG = 0.003;
 const MAX_PLACES = 30;
+/** A place also absorbs panoramas up to this many times the offset away, if they add a new year. */
+const MERGE_REACH = 3;
 /** Places search tile edge in degrees of latitude (about 250 m). Tiles sit on a fixed global grid. */
 const PLACES_TILE_DEG = 0.00225;
 /** A centre tile with fewer raw images than this is "quiet": the whole box fits in one request. */
@@ -161,6 +163,8 @@ export class MapillaryClient implements PanoSource {
   private lastStart = -Infinity;
   /** Remembered density per centre tile, so a revisit picks the right request size at once. */
   private readonly density = new Map<string, Density>();
+  /** Boxes Mapillary refused as too dense; they are split without asking again. */
+  private readonly denseBoxes = new Set<string>();
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly cache = new Map<string, Promise<unknown>>();
 
@@ -263,13 +267,24 @@ export class MapillaryClient implements PanoSource {
     params: Record<string, string | number>,
     depth = 0,
   ): Promise<{ panos: Pano[]; raw: number }> {
-    try {
-      return await this.search({ ...params, bbox });
-    } catch (err) {
-      // In the browser the slow busy-box 500 often surfaces as a bare network TypeError
-      // ("Failed to fetch") instead of a readable code-1 body, so split on that too.
-      const tooDense = err instanceof TooMuchDataError || err instanceof TypeError;
-      if (!tooDense || depth >= MAX_SPLIT_DEPTH) throw err;
+    // A box that already came back "too much data" goes straight to its quadrants, so the
+    // browser logs that 500 once per box instead of on every revisit.
+    const denseKey = `${bbox}|${JSON.stringify(params)}`;
+    let splitErr: unknown = new TooMuchDataError('known dense box');
+    if (!(this.denseBoxes.has(denseKey) && depth < MAX_SPLIT_DEPTH)) {
+      try {
+        return await this.search({ ...params, bbox });
+      } catch (err) {
+        // In the browser the slow busy-box 500 often surfaces as a bare network TypeError
+        // ("Failed to fetch") instead of a readable code-1 body, so split on that too.
+        const tooDense = err instanceof TooMuchDataError || err instanceof TypeError;
+        if (!tooDense || depth >= MAX_SPLIT_DEPTH) throw err;
+        splitErr = err;
+        if (err instanceof TooMuchDataError) this.denseBoxes.add(denseKey);
+      }
+    }
+    {
+      const err = splitErr;
       const [w, s, e, n] = bbox.split(',').map(Number);
       const mx = (w + e) / 2;
       const my = (s + n) / 2;
@@ -339,7 +354,7 @@ export class MapillaryClient implements PanoSource {
     });
   }
 
-  placesNear(lat: number, lng: number): Promise<NearbyPlace[]> {
+  placesNear(lat: number, lng: number, onPartial?: (places: NearbyPlace[]) => void): Promise<NearbyPlace[]> {
     const cLat = Math.round(lat / PLACES_GRID_DEG) * PLACES_GRID_DEG;
     const cLng = Math.round(lng / PLACES_GRID_DEG) * PLACES_GRID_DEG;
     const key = `places:${cLat.toFixed(4)},${cLng.toFixed(4)}`;
@@ -349,7 +364,17 @@ export class MapillaryClient implements PanoSource {
       const here = { lat, lng };
       const tiles = placesTiles({ lat: cLat, lng: cLng });
       const seen = new Map<string, Pano>();
+      let sentCount = 0;
       const add = (panos: Pano[]): void => panos.forEach((p) => seen.set(p.id, p));
+      // Show what is known after each tile, so the list fills in while the walk continues.
+      const emit = (): void => {
+        if (!onPartial) return;
+        const found = clusterPlaces([...seen.values()], here, this.maxOffset, MAX_PLACES);
+        if (found.length > 0 && found.length !== sentCount) {
+          sentCount = found.length;
+          onPartial(found);
+        }
+      };
       const enough = (): boolean => clusterPlaces([...seen.values()], here, this.maxOffset, MAX_PLACES).length >= MAX_PLACES;
 
       const known = this.density.get(tiles[0].key);
@@ -371,6 +396,7 @@ export class MapillaryClient implements PanoSource {
           const r = await this.placesTile(tiles[i]);
           add(r.panos);
           raw = r.raw;
+          emit();
         } catch (err) {
           if (err instanceof ThrottledError) throw err;
           failures++;
@@ -504,8 +530,13 @@ export function clusterPlaces(panos: Pano[], centre: LatLng, maxOffsetM: number,
   const newestFirst = [...panos].sort((a, b) => b.capturedAt - a.capturedAt);
   const clusters: { seed: Pano; years: Set<number> }[] = [];
   for (const p of newestFirst) {
-    const home = clusters.find((c) => distanceM(c.seed, p) <= maxOffsetM);
-    if (home) home.years.add(yearOfMs(p.capturedAt));
+    const year = yearOfMs(p.capturedAt);
+    // Same spot: within the offset. Otherwise a wider reach, but only to fill a year the place
+    // lacks, so captures from different lanes/sides of one street join instead of duplicating.
+    const home =
+      clusters.find((c) => distanceM(c.seed, p) <= maxOffsetM) ??
+      clusters.find((c) => !c.years.has(year) && distanceM(c.seed, p) <= maxOffsetM * MERGE_REACH);
+    if (home) home.years.add(year);
     else clusters.push({ seed: p, years: new Set([yearOfMs(p.capturedAt)]) });
   }
   return clusters
