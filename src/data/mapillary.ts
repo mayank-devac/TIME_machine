@@ -27,6 +27,56 @@ const BBOX_LIMIT = 2000;
 const PLACES_HALF_DEG = 0.0045;
 const PLACES_GRID_DEG = 0.003;
 const MAX_PLACES = 30;
+/** Places search tile edge in degrees of latitude (about 250 m). Tiles sit on a fixed global grid. */
+const PLACES_TILE_DEG = 0.00225;
+/** A centre tile with fewer raw images than this is "quiet": the whole box fits in one request. */
+const QUIET_RAW = 100;
+/** Thrown when the whole box came back saturated, so the tile walk must take over. */
+class SaturatedError extends Error {}
+
+/** "quiet" areas get one whole-box request; everything else walks tiles until the list is full. */
+type Density = 'quiet' | 'normal';
+
+/** Classify an area from how many raw images its centre tile returned. */
+export function densityOf(raw: number): Density {
+  return raw < QUIET_RAW ? 'quiet' : 'normal';
+}
+
+interface PlacesTile {
+  key: string;
+  bbox: string;
+  /** Distance from the search centre to the tile centre, metres. */
+  dist: number;
+}
+
+/**
+ * The fixed-grid tiles covering a box around `centre`, nearest first. Grid alignment is global,
+ * so a small pan produces the same tile keys (and reuses their cached results).
+ */
+export function placesTiles(centre: LatLng, halfDeg: number = PLACES_HALF_DEG, tileDeg: number = PLACES_TILE_DEG): PlacesTile[] {
+  const out: PlacesTile[] = [];
+  const row0 = Math.floor((centre.lat - halfDeg) / tileDeg);
+  const row1 = Math.floor((centre.lat + halfDeg) / tileDeg);
+  for (let r = row0; r <= row1; r++) {
+    const s = r * tileDeg;
+    const n = s + tileDeg;
+    const midLat = s + tileDeg / 2;
+    const lngDeg = tileDeg / Math.max(0.2, Math.cos((midLat * Math.PI) / 180));
+    const halfLng = halfDeg / Math.max(0.2, Math.cos((centre.lat * Math.PI) / 180));
+    const col0 = Math.floor((centre.lng - halfLng) / lngDeg);
+    const col1 = Math.floor((centre.lng + halfLng) / lngDeg);
+    for (let c = col0; c <= col1; c++) {
+      const w = c * lngDeg;
+      const e = w + lngDeg;
+      out.push({
+        key: `tile:${r},${c}`,
+        bbox: [w, s, e, n].map((v) => v.toFixed(6)).join(','),
+        dist: distanceM(centre, { lat: midLat, lng: w + lngDeg / 2 }),
+      });
+    }
+  }
+  return out.sort((a, b) => a.dist - b.dist);
+}
 
 export interface MapillaryOptions {
   token: string;
@@ -109,6 +159,8 @@ export class MapillaryClient implements PanoSource {
   /** Serialises request starts so they are at least `minInterval` apart. */
   private gate: Promise<void> = Promise.resolve();
   private lastStart = -Infinity;
+  /** Remembered density per centre tile, so a revisit picks the right request size at once. */
+  private readonly density = new Map<string, Density>();
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly cache = new Map<string, Promise<unknown>>();
 
@@ -292,33 +344,98 @@ export class MapillaryClient implements PanoSource {
     const cLng = Math.round(lng / PLACES_GRID_DEG) * PLACES_GRID_DEG;
     const key = `places:${cLat.toFixed(4)},${cLng.toFixed(4)}`;
     return this.cached(key, async () => {
-      const dLng = PLACES_HALF_DEG / Math.max(0.2, Math.cos((cLat * Math.PI) / 180));
-      const bbox = [cLng - dLng, cLat - PLACES_HALF_DEG, cLng + dLng, cLat + PLACES_HALF_DEG]
-        .map((n) => n.toFixed(6))
-        .join(',');
-      const base = { is_pano: 'true', limit: BBOX_LIMIT };
-      const first = await this.searchBox(bbox, base);
-      let all = first.panos;
-      if (first.raw >= BBOX_LIMIT) {
-        // Saturated: one request per year band so every year is represented.
-        const thisYear = new Date().getUTCFullYear();
-        const bands: Pano[] = [];
-        for (let y = FIRST_YEAR; y <= thisYear; y++) {
-          try {
-            const r = await this.searchBox(bbox, {
-              ...base,
-              start_captured_at: isoStart(y),
-              end_captured_at: isoEnd(y),
-            });
-            bands.push(...r.panos);
-          } catch (err) {
-            // One bad year must not lose the others (Mapillary's busy-box error is flaky).
-            if (err instanceof ThrottledError) throw err;
+      // Grow when quiet, stop early when busy: start with the nearest small tile and let its
+      // answer decide whether one whole-box request or more nearby tiles come next.
+      const here = { lat, lng };
+      const tiles = placesTiles({ lat: cLat, lng: cLng });
+      const seen = new Map<string, Pano>();
+      const add = (panos: Pano[]): void => panos.forEach((p) => seen.set(p.id, p));
+      const enough = (): boolean => clusterPlaces([...seen.values()], here, this.maxOffset, MAX_PLACES).length >= MAX_PLACES;
+
+      const known = this.density.get(tiles[0].key);
+      if (known === 'quiet') {
+        try {
+          add((await this.wholeBox(cLat, cLng)).panos);
+          return clusterPlaces([...seen.values()], here, this.maxOffset, MAX_PLACES);
+        } catch (err) {
+          if (err instanceof ThrottledError) throw err;
+          this.density.delete(tiles[0].key); // fall through to the tile walk
+        }
+      }
+
+      let failures = 0;
+      let lastErr: unknown = null;
+      for (let i = 0; i < tiles.length; i++) {
+        let raw: number;
+        try {
+          const r = await this.placesTile(tiles[i]);
+          add(r.panos);
+          raw = r.raw;
+        } catch (err) {
+          if (err instanceof ThrottledError) throw err;
+          failures++;
+          lastErr = err;
+          continue;
+        }
+        if (i === 0) {
+          const d = densityOf(raw);
+          this.density.set(tiles[0].key, d);
+          if (d === 'quiet') {
+            try {
+              add((await this.wholeBox(cLat, cLng)).panos);
+              break;
+            } catch (err) {
+              if (err instanceof ThrottledError) throw err;
+              // Whole box failed after all: keep walking tiles.
+            }
           }
         }
-        all = bands;
+        if (enough()) break;
       }
-      return clusterPlaces(all, { lat, lng }, this.maxOffset, MAX_PLACES);
+      if (failures === tiles.length) throw lastErr;
+      return clusterPlaces([...seen.values()], here, this.maxOffset, MAX_PLACES);
+    });
+  }
+
+  /** The whole places box (about 1 km) around a snapped centre, in one request where possible. */
+  private async wholeBox(cLat: number, cLng: number): Promise<{ panos: Pano[]; raw: number }> {
+    const dLng = PLACES_HALF_DEG / Math.max(0.2, Math.cos((cLat * Math.PI) / 180));
+    const bbox = [cLng - dLng, cLat - PLACES_HALF_DEG, cLng + dLng, cLat + PLACES_HALF_DEG]
+      .map((n) => n.toFixed(6))
+      .join(',');
+    const r = await this.searchBox(bbox, { is_pano: 'true', limit: BBOX_LIMIT });
+    // A quiet centre tile can still sit in a box that hits the cap; a capped answer may miss
+    // years, so let the tile walk (which has a per-year fallback) do the work instead.
+    if (r.raw >= BBOX_LIMIT) throw new SaturatedError('places box saturated');
+    return r;
+  }
+
+  /**
+   * One small places tile, cached by its grid key. A saturated tile gets one request per year
+   * so every year stays represented (rare at this size).
+   */
+  private placesTile(tile: PlacesTile): Promise<{ panos: Pano[]; raw: number }> {
+    return this.cached(tile.key, async () => {
+      const base = { is_pano: 'true', limit: BBOX_LIMIT };
+      const first = await this.searchBox(tile.bbox, base);
+      if (first.raw < BBOX_LIMIT) return first;
+      const thisYear = new Date().getUTCFullYear();
+      const bands: Pano[] = [];
+      let yearsOk = 0;
+      let lastErr: unknown = null;
+      for (let y = FIRST_YEAR; y <= thisYear; y++) {
+        try {
+          const r = await this.searchBox(tile.bbox, { ...base, start_captured_at: isoStart(y), end_captured_at: isoEnd(y) });
+          bands.push(...r.panos);
+          yearsOk++;
+        } catch (err) {
+          if (err instanceof ThrottledError) throw err;
+          lastErr = err;
+        }
+      }
+      // Every year failed: fail the tile (not cached) rather than cache an empty success.
+      if (yearsOk === 0) throw lastErr;
+      return { panos: bands, raw: first.raw };
     });
   }
 

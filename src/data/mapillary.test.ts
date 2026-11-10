@@ -281,7 +281,8 @@ describe('placesNear on a dense box', () => {
       return area(u) >= full * 0.99 ? tooMuch : { data: [raw(1, 2022, 5), raw(2, 2024, 5)] };
     });
     const places = await client.placesNear(40.758, -73.9855);
-    expect(fetchImpl).toHaveBeenCalledTimes(5); // the full box, then four quadrants
+    // The first (centre tile) request is refused and split into four quadrants.
+    expect(area(new URL(String(fetchImpl.mock.calls[1][0]))) / full).toBeCloseTo(0.25, 2);
     expect(places.length).toBeGreaterThan(0);
   });
 
@@ -301,5 +302,75 @@ describe('placesNear on a dense box', () => {
     });
     const places = await client.placesNear(40.758, -73.9855);
     expect(places.length).toBeGreaterThan(0);
+  });
+});
+
+describe('placesNear grows when quiet and stops when busy', () => {
+  const bboxArea = (input: unknown): number => {
+    const [w, s, e, n] = (new URL(String(input)).searchParams.get('bbox') ?? '').split(',').map(Number);
+    return (e - w) * (n - s);
+  };
+  /** `count` raw images forming `places` two-year places, 50 m apart going north. */
+  const crowd = (count: number, places: number, idBase = 0) =>
+    Array.from({ length: count }, (_, i) =>
+      raw(idBase + i, 2018 + (Math.floor(i / places) % 2) * 4, (i % places) * 50),
+    );
+
+  it('quiet: one small centre tile, then the whole box in one request', async () => {
+    const { client, fetchImpl } = setup(() => ({ data: crowd(6, 3) }));
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [tile, whole] = fetchImpl.mock.calls.map((c) => bboxArea(c[0]));
+    expect(whole).toBeGreaterThan(tile * 8); // grew from ~250 m to ~1 km
+    expect(places.length).toBe(3);
+  });
+
+  it('quiet tile but saturated whole box: falls back to walking tiles', async () => {
+    let call = 0;
+    const { client, fetchImpl } = setup(() => {
+      call++;
+      if (call === 1) return { data: crowd(6, 3) }; // quiet centre tile
+      if (call === 2) return { data: crowd(2000, 3, 50_000) }; // whole box hits the cap
+      return { data: crowd(300, 12, call * 1000) };
+    });
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(fetchImpl.mock.calls.length).toBeGreaterThan(2); // walked on past the capped box
+    expect(places.length).toBe(12);
+  });
+
+  it('busy: stops after the centre tile when it already fills the list', async () => {
+    const { client, fetchImpl } = setup(() => ({ data: crowd(1200, 40) }));
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(places.length).toBe(30);
+  });
+
+  it('normal: walks nearby tiles nearest first until the list is full', async () => {
+    let call = 0;
+    const { client, fetchImpl } = setup(() => ({ data: crowd(300, 12, ++call * 1000) }));
+    // Each tile adds places at the same 12 spots, so ids differ but clusters do not grow past 12:
+    // the walk covers every tile, never the whole box.
+    await client.placesNear(40.758, -73.9855);
+    const areas = fetchImpl.mock.calls.map((c) => bboxArea(c[0]));
+    expect(Math.max(...areas)).toBeLessThan(areas[0] * 1.5);
+    expect(fetchImpl.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('a failed tile does not empty the list', async () => {
+    let call = 0;
+    const { client } = setup(() => {
+      call++;
+      if (call === 2) return { __status: 400, error: { code: 100, message: 'bad' } };
+      return { data: crowd(300, 12, call * 1000) };
+    });
+    const places = await client.placesNear(40.758, -73.9855);
+    expect(places.length).toBe(12);
+  });
+
+  it('reuses cached tiles after a small pan', async () => {
+    const { client, fetchImpl } = setup(() => ({ data: crowd(1200, 40) }));
+    await client.placesNear(40.758, -73.9855);
+    await client.placesNear(40.7582, -73.9855); // a few metres: same centre tile
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
