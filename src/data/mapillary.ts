@@ -1,4 +1,4 @@
-import type { CuratedSpot, LatLng, Pano, PanoSource } from '../contracts.js';
+import type { CuratedSpot, LatLng, NearbyPlace, Pano, PanoSource } from '../contracts.js';
 import { config } from '../config.js';
 import spotsJson from './spots.json';
 
@@ -22,6 +22,11 @@ const FIELDS = [
 /** Mapillary started in 2014; the year-band fallback never looks earlier. */
 const FIRST_YEAR = 2014;
 const SEARCH_LIMIT = 100;
+const BBOX_LIMIT = 2000;
+/** Half-width of the places box in degrees (about 500 m) and the grid the centre snaps to. */
+const PLACES_HALF_DEG = 0.0045;
+const PLACES_GRID_DEG = 0.003;
+const MAX_PLACES = 30;
 
 export interface MapillaryOptions {
   token: string;
@@ -230,6 +235,32 @@ export class MapillaryClient implements PanoSource {
     });
   }
 
+  placesNear(lat: number, lng: number): Promise<NearbyPlace[]> {
+    const cLat = Math.round(lat / PLACES_GRID_DEG) * PLACES_GRID_DEG;
+    const cLng = Math.round(lng / PLACES_GRID_DEG) * PLACES_GRID_DEG;
+    const key = `places:${cLat.toFixed(4)},${cLng.toFixed(4)}`;
+    return this.cached(key, async () => {
+      const dLng = PLACES_HALF_DEG / Math.max(0.2, Math.cos((cLat * Math.PI) / 180));
+      const bbox = [cLng - dLng, cLat - PLACES_HALF_DEG, cLng + dLng, cLat + PLACES_HALF_DEG]
+        .map((n) => n.toFixed(6))
+        .join(',');
+      const base = { bbox, is_pano: 'true', limit: BBOX_LIMIT };
+      const first = await this.search(base);
+      let all = first.panos;
+      if (first.raw >= BBOX_LIMIT) {
+        // Saturated: one request per year band so every year is represented.
+        const thisYear = new Date().getUTCFullYear();
+        const bands: Pano[] = [];
+        for (let y = FIRST_YEAR; y <= thisYear; y++) {
+          const r = await this.search({ ...base, start_captured_at: isoStart(y), end_captured_at: isoEnd(y) });
+          bands.push(...r.panos);
+        }
+        all = bands;
+      }
+      return clusterPlaces(all, { lat, lng }, this.maxOffset, MAX_PLACES);
+    });
+  }
+
   neighbours(pano: Pano): Promise<Pano[]> {
     const key = `nb:${pano.id}`;
     return this.cached(key, async () => {
@@ -285,4 +316,23 @@ export function nearestPerYear(panos: Pano[], at: LatLng, maxOffsetM: number): M
   const out = new Map<number, Pano>();
   for (const y of [...best.keys()].sort((a, b) => a - b)) out.set(y, best.get(y)!.p);
   return out;
+}
+
+/**
+ * Group panoramas into places: a place is a seed (newest panorama first) plus every panorama
+ * within `maxOffsetM` of it. Keeps places with 2+ distinct capture years, nearest to `centre` first.
+ */
+export function clusterPlaces(panos: Pano[], centre: LatLng, maxOffsetM: number, limit: number): NearbyPlace[] {
+  const newestFirst = [...panos].sort((a, b) => b.capturedAt - a.capturedAt);
+  const clusters: { seed: Pano; years: Set<number> }[] = [];
+  for (const p of newestFirst) {
+    const home = clusters.find((c) => distanceM(c.seed, p) <= maxOffsetM);
+    if (home) home.years.add(yearOfMs(p.capturedAt));
+    else clusters.push({ seed: p, years: new Set([yearOfMs(p.capturedAt)]) });
+  }
+  return clusters
+    .filter((c) => c.years.size >= 2)
+    .sort((a, b) => distanceM(a.seed, centre) - distanceM(b.seed, centre) || b.years.size - a.years.size)
+    .slice(0, limit)
+    .map((c) => ({ lat: c.seed.lat, lng: c.seed.lng, panoId: c.seed.id, years: [...c.years].sort((x, y) => x - y) }));
 }

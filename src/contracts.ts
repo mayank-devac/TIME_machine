@@ -67,6 +67,14 @@ export interface CuratedSpot extends LatLng {
   years: number[];
 }
 
+/** A place near the map view that has panoramas from at least two different years. */
+export interface NearbyPlace extends LatLng {
+  /** Newest panorama at the place. */
+  panoId: string;
+  /** Capture years found within `config.maxYearOffsetMetres` of the place, ascending. */
+  years: number[];
+}
+
 export function yearOf(pano: Pick<Pano, 'capturedAt'>): number {
   return new Date(pano.capturedAt).getUTCFullYear();
 }
@@ -101,6 +109,7 @@ export function initialAppState(): AppState {
  * Who emits what (emit only your own; listen to anything):
  *  spot:selected      Track D (map pick) or the landing page, or the curated list.
  *  pano:shown         Track B after `show` or `commitPast` has put a panorama on screen.
+ *  map:viewChanged    Track D, about 0.7 s after the table map stopped panning or zooming.
  *  time:yearsKnown    Track C, after `pano:shown`, from `PanoSource.yearsAt`.
  *  time:toggled       Track G (TIME MACHINE button). Track C listens.
  *  time:yearChanged   Track C (wrist dial or mouse wheel). `year` may be below the earliest
@@ -115,6 +124,7 @@ export function initialAppState(): AppState {
  */
 export interface EventMap {
   'spot:selected': SpotInfo;
+  'map:viewChanged': { lat: number; lng: number; zoom: number };
   'pano:shown': { pano: Pano };
   'time:yearsKnown': { years: number[]; earliest: number | null };
   'time:toggled': { on: boolean };
@@ -220,6 +230,11 @@ export interface PanoSource {
   neighbours(pano: Pano): Promise<Pano[]>;
   /** Fetch a panorama by id with fresh, unexpired image URLs. */
   resolve(id: string): Promise<Pano>;
+  /**
+   * Places with panoramas from 2+ years in a box of about 1 km around the point (the point is
+   * snapped to a 0.003 degree grid, so small pans reuse the cache). Nearest to the point first.
+   */
+  placesNear(lat: number, lng: number): Promise<NearbyPlace[]>;
   /** The curated launch spots. */
   spots(): CuratedSpot[];
 }

@@ -232,30 +232,60 @@ describe('year chips', () => {
 });
 
 describe('places list', () => {
-  const spots = Array.from({ length: 12 }, (_, i) => ({
-    name: `Spot ${i}, City`,
-    years: i === 0 ? [2020] : [2016, 2020, 2025],
+  const centre = { lat: 40.758, lng: -73.9855 };
+  const places = Array.from({ length: 12 }, (_, i) => ({
+    lat: centre.lat + i * 0.0003,
+    lng: centre.lng,
+    years: i === 0 ? [2020] : [2025, 2016, 2020],
   }));
 
-  it('pages five at a time and puts single-year spots last', async () => {
+  it('pages five at a time and keeps the incoming order', async () => {
     const { placesPage } = await import('./hud-logic.js');
-    const first = placesPage(spots, 0);
+    const first = placesPage(places, centre, 0);
     expect(first.rows).toHaveLength(5);
     expect(first.pageText).toBe('1 / 3');
-    expect(first.rows[0]).toMatchObject({ name: 'Spot 1', yearsText: '2016-2025', index: 1 });
-    const last = placesPage(spots, 99);
+    expect(first.rows[0]).toMatchObject({ name: 'Here', yearsText: '2020', index: 0 });
+    expect(first.rows[1]).toMatchObject({ name: '30 m N', yearsText: '2016-2025', index: 1 });
+    const last = placesPage(places, centre, 99);
     expect(last.page).toBe(2);
-    expect(last.rows[last.rows.length - 1]).toMatchObject({ name: 'Spot 0', yearsText: '2020' });
+    expect(last.rows.map((r) => r.index)).toEqual([10, 11]);
   });
 
   it('handles an empty list', async () => {
     const { placesPage } = await import('./hud-logic.js');
-    expect(placesPage([], 3)).toMatchObject({ rows: [], page: 0, pageText: '1 / 1' });
+    expect(placesPage([], null, 3)).toMatchObject({ rows: [], page: 0, pageText: '1 / 1' });
+  });
+
+  it('describes offsets in metres, kilometres and compass points', async () => {
+    const { describeOffset } = await import('./hud-logic.js');
+    expect(describeOffset(centre, { lat: centre.lat, lng: centre.lng + 0.002 })).toBe('170 m E');
+    expect(describeOffset(centre, { lat: centre.lat - 0.02, lng: centre.lng })).toBe('2.2 km S');
+    expect(describeOffset(centre, { lat: centre.lat + 0.0001, lng: centre.lng })).toBe('Here');
+  });
+
+  it('explains an empty list', async () => {
+    const { placesTitle } = await import('./hud-logic.js');
+    expect(placesTitle(10, false, 0)).toBe('ZOOM IN TO FIND PLACES');
+    expect(placesTitle(15, true, 0)).toBe('LOOKING NEARBY...');
+    expect(placesTitle(15, false, 0)).toBe('NO PAST IMAGERY NEARBY');
+    expect(placesTitle(15, false, 3)).toBe('NEARBY, WITH PAST IMAGERY');
   });
 
   it('shows the list in the room and MAP in street and portal', async () => {
     const { showMapButton, showPlacesPanel } = await import('./hud-logic.js');
-    expect([showPlacesPanel('table'), showPlacesPanel('street')]).toEqual([true, false]);
+    expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, false]);
+    expect(showPlacesPanel('table', 0)).toBe(false);
     expect([showMapButton('table'), showMapButton('street'), showMapButton('portal')]).toEqual([false, true, true]);
+  });
+
+  it('drops places that would show NaN', async () => {
+    const { usablePlaces, placesPage } = await import('./hud-logic.js');
+    const good = { lat: 1, lng: 2, years: [2020, 2021] };
+    const kept = usablePlaces([good, { lat: NaN, lng: 2, years: [2020] }, { lat: 1, lng: 2, years: [NaN] }, { lat: 1, lng: 2, years: [] }]);
+    expect(kept).toEqual([good]);
+    expect(placesPage([{ lat: 1, lng: 2, years: [NaN, 2020] }], { lat: NaN, lng: 0 }, 0).rows[0]).toMatchObject({
+      name: 'Nearby',
+      yearsText: '2020',
+    });
   });
 });

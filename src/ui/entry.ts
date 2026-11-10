@@ -1,6 +1,6 @@
 import { RayInteractable, Vector3, Quaternion } from '@iwsdk/core';
 import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
-import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
+import type { ArchivePhoto, LatLng, NearbyPlace, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { HudTag } from '../track-components.js';
 import {
   BusyScopes,
@@ -15,8 +15,11 @@ import {
   yawFromForward,
   PLACES_PER_PAGE,
   placesPage,
+  placesTitle,
+  PLACES_MIN_ZOOM,
   showMapButton,
   showPlacesPanel,
+  usablePlaces,
 } from './hud-logic.js';
 import type { PlacesPage } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
@@ -166,17 +169,22 @@ export const createTrack: TrackFactory = async (ctx) => {
     }
   };
 
-  // Room panel: curated places that have past imagery. Click a row to enter that street.
-  const spots = ctx.services.source.spots();
+  // Room panel: places near the map's current view that have past imagery. Click a row to enter.
+  let places: NearbyPlace[] = [];
+  let placesCentre: LatLng | null = null;
+  let placesZoom: number | null = null;
+  let placesLoading = false;
+  let placesToken = 0;
   let placesPageIndex = 0;
-  let placesView: PlacesPage = placesPage(spots, 0);
+  let placesView: PlacesPage = placesPage(places, null, 0);
   const refreshPlaces = (): void => {
     const mode = state.get().mode;
-    setVisible('places', showPlacesPanel(mode));
+    setVisible('places', showPlacesPanel(mode, places.length));
     setVisible('map', showMapButton(mode));
-    if (!showPlacesPanel(mode)) return;
-    placesView = placesPage(spots, placesPageIndex);
+    if (!showPlacesPanel(mode, places.length)) return;
+    placesView = placesPage(places, placesCentre, placesPageIndex);
     placesPageIndex = placesView.page;
+    text('places', 'places-title')?.setProperties({ text: placesTitle(placesZoom, placesLoading, places.length) });
     for (let i = 0; i < PLACES_PER_PAGE; i++) {
       const row = placesView.rows[i];
       box('places', `place-row-${i}`)?.setProperties({ display: row ? 'flex' : 'none' });
@@ -186,6 +194,34 @@ export const createTrack: TrackFactory = async (ctx) => {
       }
     }
     text('places', 'places-page')?.setProperties({ text: placesView.pageText });
+  };
+
+  /** Look up places around the map view. The newest request wins; failures leave the list empty. */
+  const loadPlaces = async (lat: number, lng: number, zoom: number): Promise<void> => {
+    const token = ++placesToken;
+    placesCentre = { lat, lng };
+    placesZoom = zoom;
+    if (zoom < PLACES_MIN_ZOOM) {
+      places = [];
+      placesLoading = false;
+      placesPageIndex = 0;
+      refreshPlaces();
+      return;
+    }
+    placesLoading = true;
+    refreshPlaces();
+    try {
+      const found = await ctx.services.source.placesNear(lat, lng);
+      if (token !== placesToken || disposed) return;
+      places = usablePlaces(found);
+      placesPageIndex = 0;
+    } catch (err) {
+      if (token !== placesToken || disposed) return;
+      places = [];
+      bus.emit('error', { source: 'ui', message: `Could not look up places: ${String(err)}`, recoverable: true });
+    }
+    placesLoading = false;
+    refreshPlaces();
   };
 
   const refreshHud = (): void => {
@@ -273,8 +309,8 @@ export const createTrack: TrackFactory = async (ctx) => {
   for (let i = 0; i < PLACES_PER_PAGE; i++) {
     listen(box('places', `place-row-${i}`), () => {
       const row = placesView.rows[i];
-      const spot = row ? spots[row.index] : undefined;
-      if (spot) bus.emit('spot:selected', { lat: spot.lat, lng: spot.lng, label: spot.name });
+      const place = row ? places[row.index] : undefined;
+      if (place) bus.emit('spot:selected', { lat: place.lat, lng: place.lng, label: row?.name });
     });
   }
   const turnPage = (delta: number): void => {
@@ -306,6 +342,7 @@ export const createTrack: TrackFactory = async (ctx) => {
   // Events
   // ---------------------------------------------------------------------------------------
   offs.push(
+    bus.on('map:viewChanged', ({ lat, lng, zoom }) => void loadPlaces(lat, lng, zoom)),
     bus.on('spot:selected', () => {
       yearsKnown = false;
       photos = [];

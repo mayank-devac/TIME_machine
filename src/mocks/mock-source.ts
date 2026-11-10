@@ -1,5 +1,5 @@
 import fixtures from './fixtures.json';
-import type { CuratedSpot, Pano, PanoSource } from '../contracts.js';
+import type { CuratedSpot, Pano, PanoSource, NearbyPlace } from '../contracts.js';
 import { yearOf } from '../contracts.js';
 
 const base = (path: string): string =>
@@ -38,6 +38,10 @@ export class MockPanoSource implements PanoSource {
     const found = FIXTURE_PANOS.find((p) => p.id === id);
     if (!found) throw new Error(`mock source: unknown pano ${id}`);
     return found;
+  }
+
+  async placesNear(): Promise<NearbyPlace[]> {
+    return [{ lat: FIXTURE_SPOT.lat, lng: FIXTURE_SPOT.lng, panoId: FIXTURE_SPOT.panoId, years: FIXTURE_SPOT.years }];
   }
 
   spots(): CuratedSpot[] {

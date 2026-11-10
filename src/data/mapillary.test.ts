@@ -234,3 +234,33 @@ describe('spots.json', () => {
     }
   });
 });
+
+describe('clusterPlaces', () => {
+  const mk = (id: string, year: number, northM: number) => ({
+    id,
+    lat: 40.758 + northM / 111_320,
+    lng: -73.9855,
+    capturedAt: Date.UTC(year, 5, 1),
+    heading: 0,
+    imageUrl: '',
+    width: 1,
+    height: 1,
+    creator: 'x',
+    sequenceId: 's',
+  });
+
+  it('merges years within the offset and drops one-year places', async () => {
+    const { clusterPlaces } = await import('./mapillary.js');
+    const panos = [mk('a', 2025, 0), mk('b', 2020, 6), mk('c', 2016, 9), mk('d', 2024, 300), mk('e', 2024, 305)];
+    const out = clusterPlaces(panos, { lat: 40.758, lng: -73.9855 }, 12, 30);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ panoId: 'a', years: [2016, 2020, 2025] });
+  });
+
+  it('puts the nearest place first', async () => {
+    const { clusterPlaces } = await import('./mapillary.js');
+    const panos = [mk('far1', 2025, 400), mk('far2', 2020, 400), mk('near1', 2025, 20), mk('near2', 2020, 20)];
+    const out = clusterPlaces(panos, { lat: 40.758, lng: -73.9855 }, 12, 30);
+    expect(out.map((p) => p.panoId)).toEqual(['near1', 'far1']);
+  });
+});

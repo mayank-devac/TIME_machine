@@ -30,6 +30,7 @@ function withFixtureNeighbours(base: PanoSource): PanoSource {
     panosNear: (lat, lng, r) => base.panosNear(lat, lng, r),
     yearsAt: (lat, lng) => base.yearsAt(lat, lng),
     resolve: (id) => base.resolve(id),
+    placesNear: (lat, lng) => base.placesNear(lat, lng),
     spots: () => base.spots(),
     neighbours: async (pano) => {
       const { devNeighbours } = await import('./dev-harness.js');

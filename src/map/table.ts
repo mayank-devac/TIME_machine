@@ -187,6 +187,7 @@ export class TableMap implements MapTable {
   private error: string | null = null;
   private visible = true;
   private disposed = false;
+  private viewTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly tmpLocal = new Vector3();
   private readonly tmpPixel: Pixel = { x: 0, y: 0 };
   /** Dev diagnostics hook. */
@@ -249,6 +250,7 @@ export class TableMap implements MapTable {
     this.visible = true;
     this.root.visible = true;
     this.scheduler.markDirty();
+    this.scheduleViewEvent(); // lets the places list fill in on first show and on return from a street
   }
 
   hide(): void {
@@ -451,6 +453,7 @@ export class TableMap implements MapTable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.viewTimer !== null) clearTimeout(this.viewTimer);
     this.offs.forEach((off) => off());
     this.offs.length = 0;
     this.mapMesh.onBeforeRender = () => {};
@@ -658,6 +661,17 @@ export class TableMap implements MapTable {
       bearing: 0,
     });
     this.scheduler.markDirty();
+    this.scheduleViewEvent();
+  }
+
+  /** Tell the rest of the app where the map is looking, once the user stops moving it. */
+  private scheduleViewEvent(): void {
+    if (this.viewTimer !== null) clearTimeout(this.viewTimer);
+    this.viewTimer = setTimeout(() => {
+      this.viewTimer = null;
+      if (this.disposed) return;
+      this.bus.emit('map:viewChanged', { lat: this.view.lat, lng: this.view.lng, zoom: this.view.zoom });
+    }, 700);
   }
 
   /**

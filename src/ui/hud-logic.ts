@@ -2,7 +2,7 @@
  * Pure HUD logic (no Three.js, no DOM). Everything here is unit tested in hud-logic.test.ts.
  * All copy is plain ASCII: the UI font is not known to carry typographic glyphs.
  */
-import type { AppState, ArchivePhoto, Mode, Pano } from '../contracts.js';
+import type { AppState, ArchivePhoto, LatLng, Mode, Pano } from '../contracts.js';
 import { yearOf } from '../contracts.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -133,11 +133,15 @@ export function yearChipAction(chip: YearChip, timeOn: boolean): YearChipAction 
 // ---------------------------------------------------------------------------------------------
 
 export const PLACES_PER_PAGE = 5;
+/** Below this map zoom the view is too wide for a "nearby" list. */
+export const PLACES_MIN_ZOOM = 13;
 
 export interface PlaceRow {
+  /** "120 m NE": distance and direction from the map centre. Mapillary gives no place names. */
   name: string;
   /** "2016-2025" or "2016" when there is a single year. Plain ASCII. */
   yearsText: string;
+  /** Index into the places array that was passed in. */
   index: number;
 }
 
@@ -148,24 +152,52 @@ export interface PlacesPage {
   pageText: string;
 }
 
-export const showPlacesPanel = (mode: Mode): boolean => mode === 'table';
+/** The room list shows only when there is at least one place to list. */
+export const showPlacesPanel = (mode: Mode, placeCount: number): boolean => mode === 'table' && placeCount > 0;
+
+/** Drops places with a non-finite position or no finite year, so no row can read "NaN". */
+export function usablePlaces<T extends LatLng & { years: readonly number[] }>(places: readonly T[]): T[] {
+  return places.filter(
+    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.years.some((y) => Number.isFinite(y)),
+  );
+}
 export const showMapButton = (mode: Mode): boolean => mode === 'street' || mode === 'portal';
 
-/** Spots with at least two years first (those are the ones the time machine works at). */
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+
+/** Distance and compass direction from `from` to `to`, e.g. "120 m NE" or "1.2 km S". */
+export function describeOffset(from: LatLng, to: LatLng): string {
+  if (![from.lat, from.lng, to.lat, to.lng].every(Number.isFinite)) return 'Nearby';
+  const rad = Math.PI / 180;
+  const dy = (to.lat - from.lat) * 111_320;
+  const dx = (to.lng - from.lng) * 111_320 * Math.cos(from.lat * rad);
+  const d = Math.hypot(dx, dy);
+  if (d < 15) return 'Here';
+  const bearing = (Math.atan2(dx, dy) / rad + 360) % 360;
+  const dir = COMPASS[Math.round(bearing / 45) % 8]!;
+  const dist = d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`;
+  return `${dist} ${dir}`;
+}
+
+/** The title line: tells the user why the list is empty when it is. */
+export function placesTitle(zoom: number | null, loading: boolean, count: number): string {
+  if (zoom !== null && zoom < PLACES_MIN_ZOOM) return 'ZOOM IN TO FIND PLACES';
+  if (loading) return 'LOOKING NEARBY...';
+  return count === 0 ? 'NO PAST IMAGERY NEARBY' : 'NEARBY, WITH PAST IMAGERY';
+}
+
+/** Pages `places` (already nearest first) five at a time. */
 export function placesPage(
-  spots: ReadonlyArray<{ name: string; years: readonly number[] }>,
+  places: ReadonlyArray<LatLng & { years: readonly number[] }>,
+  centre: LatLng | null,
   requestedPage: number,
 ): PlacesPage {
-  const order = spots
-    .map((s, index) => ({ s, index }))
-    .sort((a, b) => Number(b.s.years.length >= 2) - Number(a.s.years.length >= 2) || a.index - b.index);
-  const pageCount = Math.max(1, Math.ceil(order.length / PLACES_PER_PAGE));
+  const pageCount = Math.max(1, Math.ceil(places.length / PLACES_PER_PAGE));
   const page = Math.min(Math.max(0, Math.floor(requestedPage)), pageCount - 1);
-  const rows = order.slice(page * PLACES_PER_PAGE, (page + 1) * PLACES_PER_PAGE).map(({ s, index }) => {
-    const ys = [...s.years].sort((a, b) => a - b);
-    const yearsText =
-      ys.length === 0 ? '' : ys.length === 1 ? String(ys[0]) : `${ys[0]}-${ys[ys.length - 1]}`;
-    return { name: s.name.split(',')[0]!.trim(), yearsText, index };
+  const rows = places.slice(page * PLACES_PER_PAGE, (page + 1) * PLACES_PER_PAGE).map((p, i) => {
+    const ys = p.years.filter((y) => Number.isFinite(y)).sort((a, b) => a - b);
+    const yearsText = ys.length === 0 ? '' : ys.length === 1 ? String(ys[0]) : `${ys[0]}-${ys[ys.length - 1]}`;
+    return { name: centre ? describeOffset(centre, p) : 'Nearby', yearsText, index: page * PLACES_PER_PAGE + i };
   });
   return { rows, page, pageCount, pageText: `${page + 1} / ${pageCount}` };
 }

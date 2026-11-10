@@ -1,5 +1,17 @@
 [
   {
+    "name": "Times Square, New York",
+    "lat": 40.758377,
+    "lng": -73.985223,
+    "panoId": "3038619139818801",
+    "years": [
+      2016,
+      2022,
+      2023,
+      2025
+    ]
+  },
+  {
     "name": "Shibuya Crossing, Tokyo",
     "lat": 35.659628,
     "lng": 139.700241,
@@ -19,18 +31,6 @@
     "years": [
       2018,
       2019,
-      2025
-    ]
-  },
-  {
-    "name": "Times Square, New York",
-    "lat": 40.758377,
-    "lng": -73.985223,
-    "panoId": "3038619139818801",
-    "years": [
-      2016,
-      2022,
-      2023,
       2025
     ]
   },
@@ -57,17 +57,6 @@
     ]
   },
   {
-    "name": "Place de la Concorde, Paris",
-    "lat": 48.864928,
-    "lng": 2.320912,
-    "panoId": "972779818009213",
-    "years": [
-      2016,
-      2017,
-      2022
-    ]
-  },
-  {
     "name": "Tower Bridge, London",
     "lat": 51.505502,
     "lng": -0.075417,
@@ -76,6 +65,17 @@
       2017,
       2019,
       2023
+    ]
+  },
+  {
+    "name": "Place de la Concorde, Paris",
+    "lat": 48.864928,
+    "lng": 2.320912,
+    "panoId": "972779818009213",
+    "years": [
+      2016,
+      2017,
+      2022
     ]
   },
   {
@@ -122,6 +122,140 @@
       2022,
       2023,
       2024,
+      2025,
+      2026
+    ]
+  },
+  {
+    "name": "Piazza del Duomo, Milan",
+    "lat": 45.463697,
+    "lng": 9.190858,
+    "panoId": "732739982512198",
+    "years": [
+      2020,
+      2024,
+      2025
+    ]
+  },
+  {
+    "name": "Place Jacques-Cartier, Montreal",
+    "lat": 45.507904,
+    "lng": -73.551782,
+    "panoId": "2593149721127369",
+    "years": [
+      2023,
+      2024,
+      2025,
+      2026
+    ]
+  },
+  {
+    "name": "Unter den Linden, Berlin",
+    "lat": 52.517161,
+    "lng": 13.388889,
+    "panoId": "718617087261987",
+    "years": [
+      2022,
+      2023,
+      2025
+    ]
+  },
+  {
+    "name": "Union Station, Washington DC",
+    "lat": 38.896833,
+    "lng": -77.006008,
+    "panoId": "1488442122342771",
+    "years": [
+      2019,
+      2020,
+      2025
+    ]
+  },
+  {
+    "name": "Lincoln Memorial, Washington DC",
+    "lat": 38.890273,
+    "lng": -77.05071,
+    "panoId": "1366279961569717",
+    "years": [
+      2019,
+      2020,
+      2025
+    ]
+  },
+  {
+    "name": "Harvard Square, Cambridge",
+    "lat": 42.374502,
+    "lng": -71.118797,
+    "panoId": "528696191628622",
+    "years": [
+      2017,
+      2018,
+      2026
+    ]
+  },
+  {
+    "name": "Pennsylvania Avenue, Washington DC",
+    "lat": 38.895098,
+    "lng": -77.036395,
+    "panoId": "1000031960706669",
+    "years": [
+      2016,
+      2021,
+      2022
+    ]
+  },
+  {
+    "name": "Grote Markt, Antwerp",
+    "lat": 51.220624,
+    "lng": 4.39929,
+    "panoId": "1458402555893361",
+    "years": [
+      2023,
+      2024,
+      2025,
+      2026
+    ]
+  },
+  {
+    "name": "Neumarkt, Dresden",
+    "lat": 51.052258,
+    "lng": 13.741317,
+    "panoId": "583700540842942",
+    "years": [
+      2014,
+      2018,
+      2025
+    ]
+  },
+  {
+    "name": "Ghent Korenmarkt",
+    "lat": 51.053877,
+    "lng": 3.72132,
+    "panoId": "1920700231963734",
+    "years": [
+      2017,
+      2023,
+      2025
+    ]
+  },
+  {
+    "name": "Tallinn Town Hall Square",
+    "lat": 59.437373,
+    "lng": 24.745098,
+    "panoId": "189116106394446",
+    "years": [
+      2015,
+      2018,
+      2020
+    ]
+  },
+  {
+    "name": "Riga Dome Square",
+    "lat": 56.949674,
+    "lng": 24.105251,
+    "panoId": "1408037181136657",
+    "years": [
+      2019,
       2025,
       2026
     ]
