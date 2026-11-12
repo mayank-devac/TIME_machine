@@ -17,7 +17,12 @@ export const TimeLensTag = marker('TimeLensTag');
 export const PortalFrameTag = marker('PortalFrameTag');
 export const ArchivePhotoTag = marker('ArchivePhotoTag');
 export const HudTag = marker('HudTag');
-/** Mesh controls that react to a pointer ray. `slot` is a `HoverVariant` from `src/theme.ts`. */
-export const HoverFx = marker('HoverFx');
+/** Mesh controls that react to a pointer ray. `slot` is a `HoverVariant` from `src/theme.ts`.
+ *  `target` names a child object the hover applies to; empty means the entity's own object. */
+export const HoverFx = createComponent('HoverFx', {
+  slot: { type: Types.String, default: '' },
+  value: { type: Types.Float32, default: 0 },
+  target: { type: Types.String, default: '' },
+});
 /** The grabbable rig of a draggable panel. `slot` is the panel id used by `PanelPlacements`. */
 export const DragGrip = marker('DragGrip');

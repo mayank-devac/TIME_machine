@@ -11,6 +11,7 @@ import {
 import type { Entity, World } from '@iwsdk/core';
 import type { ArchivePhoto } from '../contracts.js';
 import { DragRig, placements } from '../drag.js';
+import { readHead } from '../head.js';
 import { currentTokens, onThemeChange, withAlpha } from '../theme.js';
 import { ArchivePhotoTag, HoverFx } from '../track-components.js';
 import type { PhotoRenderer } from './controller.js';
@@ -140,10 +141,15 @@ async function loadBitmap(url: string): Promise<ImageBitmap> {
 
 /** Fades frames in and out by opacity only, then frees faded-out frames. No per-frame allocation. */
 export class ArchiveFadeSystem extends createSystem({}) {
+  private head = new Vector3();
+
   update(delta: number): void {
+    readHead(this.world, this.head);
     const step = delta / LAYOUT.fadeSeconds;
     for (let i = live.length - 1; i >= 0; i--) {
       const f = live[i];
+      // Every frame always faces the viewer (the photo turns, not the user), staying upright.
+      f.rig.root.lookAt(this.head.x, f.rig.root.position.y, this.head.z);
       const m = f.material;
       if (m.opacity < f.target) m.opacity = Math.min(f.target, m.opacity + step);
       else if (m.opacity > f.target) m.opacity = Math.max(f.target, m.opacity - step);

@@ -27,7 +27,9 @@ Emits `time:toggled {on}` (TIME MACHINE button, ignored while disabled) and
 Recoverable errors dismiss after 4 s; `recoverable: false` stays until the next `spot:selected`.
 
 ## Comfort and placement
-Panels never follow the head. `recentre()` hard-snaps all five to the head's position and
+Panels keep the position `recentre()` or a drag left them at, but always turn to face the
+viewer: `PanelFaceSystem` points every visible panel at the head every frame, so a panel
+never sits edge-on or backwards. `recentre()` hard-snaps all five to the head's position and
 yaw (credits 1.5 m ahead, 0.75 m below the eye line; button 32 degrees left, year and portal 32
 degrees right). It runs once at start, on every `mode:changed`, 0.7 s after an XR session
 starts, and when the user presses `C` on desktop. `Track.recentre()` is also exposed.

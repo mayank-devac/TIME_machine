@@ -19,6 +19,8 @@ the street fully. BACK TO ROOM returns to the table.
   mode it sets `stage.stencilRef = null` and hides the window. It emits at most one
   `mode:requested` at a time (`street` to enter, `table` to exit, `portal` from `open()`),
   and a refused request lapses after 1.5 s so it never sticks.
+- **Always facing.** While the window is open, `PortalSystem` yaws it toward the head every
+  frame (upright, position untouched), so it never sits edge-on. It is left alone while held.
 - **Step / push through.** `PortalSystem` tracks the head and both index tips (controllers
   fall back to their ray pose) with `CrossingDetector`: the point must start clearly on the
   room side and end clearly on the street side, and the crossing must pass through the

@@ -97,7 +97,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     paintButton(host.el('places', 'places-prev'), host.text('places', 'places-prev-label'), 'control');
     paintButton(host.el('places', 'places-next'), host.text('places', 'places-next-label'), 'control');
 
-    // The grip sits under the panel, so it has to move whenever the panel's height changes.
+    // The grip sits above the panel, so it has to move whenever the panel's height changes.
     const next = `${isFolded}|${view.rows.length}|${pager}`;
     if (next !== shape) {
       shape = next;

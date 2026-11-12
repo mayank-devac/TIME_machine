@@ -34,6 +34,14 @@ function dataOf(obj: Object3D): HoverData {
   return d;
 }
 
+/** The object a HoverFx applies to: a named child when `target` is set, else its own object. */
+function objectFor(entity: Entity): Object3D | null {
+  const obj = entity.object3D;
+  if (!obj) return null;
+  const target = entity.getValue(HoverFx, 'target') ?? '';
+  return target ? (obj.getObjectByName(target) ?? null) : obj;
+}
+
 /**
  * Register the materials a hover should tint, and the token they show at rest. Sets the rest
  * colour now; the system keeps it right across hovers and theme changes.
@@ -64,7 +72,7 @@ export class HoverSystem extends createSystem({
       this.queries.hovered.subscribe('disqualify', (entity) => this.apply(entity, false)),
       onThemeChange(() => {
         for (const entity of this.queries.fx.entities) {
-          const obj = entity.object3D;
+          const obj = objectFor(entity);
           const d = obj ? data.get(obj) : undefined;
           if (d) paint(d, entity.getValue(HoverFx, 'slot') ?? '');
         }
@@ -73,9 +81,9 @@ export class HoverSystem extends createSystem({
   }
 
   private apply(entity: Entity, on: boolean): void {
-    const obj = entity.object3D;
+    const obj = objectFor(entity);
     if (!obj) return; // disposed while hovered
-    const variant = entity.hasComponent(HoverFx) ? (entity.getValue(HoverFx, 'slot') ?? '') : '';
+    const variant = entity.getValue(HoverFx, 'slot') ?? '';
     const spec = isHoverVariant(variant) ? HOVER[variant] : HOVER.default;
     const d = dataOf(obj);
     if (d.on === on) return;

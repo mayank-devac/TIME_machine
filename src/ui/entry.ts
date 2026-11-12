@@ -1,7 +1,8 @@
-import { Box3, Quaternion, RayInteractable, Vector3 } from '@iwsdk/core';
+import { Box3, Quaternion, RayInteractable, Vector3, createSystem } from '@iwsdk/core';
 import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
 import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
+import { readHead } from '../head.js';
 import { onThemeChange } from '../theme.js';
 import { HudTag } from '../track-components.js';
 import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotPosition, slotSpec, yawFromForward } from './hud-logic.js';
@@ -17,7 +18,7 @@ import { createStreetBar } from './street-bar.js';
 interface PanelSpec {
   /** Manifest id in `src/assets.ts`. */
   asset: string;
-  /** Id of the panel's root element, measured to put the drag grip under it. */
+  /** Id of the panel's root element, measured to put the drag grip above it. */
   root: string;
   /** Has controls, so it needs `RayInteractable` for clicks to land. */
   interactive: boolean;
@@ -45,9 +46,23 @@ interface Panel {
 const RECENTRE_AFTER_XR_MS = 700;
 /** UIKit lays a panel out a few frames after a change; measure for the grip after this. */
 const GRIP_SETTLE_MS = 150;
-/** Gap between a panel's bottom edge and its grip, metres. */
+/** Gap between a panel's top edge and its grip, metres. */
 const GRIP_GAP_M = 0.03;
 const SPINNER_FRAMES = ['Loading', 'Loading.', 'Loading..', 'Loading...'];
+
+/**
+ * Per frame: turn every visible panel to face the viewer, wherever it is placed. A panel
+ * keeps its authored or dragged position; only its orientation tracks the head. The work
+ * lives behind a callback because the object to turn is the rig root (not the entity's own
+ * asset, which is a child of it), and the panel map belongs to the UI track.
+ */
+class PanelFaceSystem extends createSystem({}) {
+  face: (() => void) | null = null;
+
+  update(): void {
+    this.face?.();
+  }
+}
 
 export const createTrack: TrackFactory = async (ctx) => {
   const { world, bus, state } = ctx;
@@ -126,7 +141,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     },
   };
 
-  /** Put a panel's grip just under its bottom edge, measured with the rig turned square on. */
+  /** Put a panel's grip just above its top edge, measured with the rig turned square on. */
   function placeGrip(slot: HudSlot): void {
     const panel = panels.get(slot);
     const root = host.el(slot, PANELS[slot].root) as (El & Object3D) | null;
@@ -139,10 +154,10 @@ export const createTrack: TrackFactory = async (ctx) => {
     rig.getWorldPosition(rigPos);
     rig.quaternion.copy(savedQuat);
     rig.updateMatrixWorld(true);
-    const bottom = box3.min.y - rigPos.y;
+    const top = box3.max.y - rigPos.y;
     // Before the first layout the box is empty or wild; keep the grip close in that case.
-    const sane = Number.isFinite(bottom) && bottom < 0 && bottom > -1.5;
-    panel.rig.placeGrip(0, (sane ? bottom : -0.06) - GRIP_GAP_M, 0);
+    const sane = Number.isFinite(top) && top > 0 && top < 1.5;
+    panel.rig.placeGrip(0, (sane ? top : 0.06) + GRIP_GAP_M, 0);
   }
 
   /**
@@ -167,6 +182,23 @@ export const createTrack: TrackFactory = async (ctx) => {
       host.resized(slot);
     }
   };
+
+  /**
+   * Turn every visible panel to face the head (yaw and pitch), wherever recentre or a drag
+   * left it. Runs every frame via `PanelFaceSystem`, so a panel never sits edge-on or
+   * backwards to whoever looks at it.
+   */
+  const faceHead = (): void => {
+    if (disposed) return;
+    readHead(world, head);
+    for (const panel of panels.values()) {
+      if (!panel.node.visible) continue;
+      panel.node.lookAt(head);
+    }
+  };
+
+  world.registerSystem(PanelFaceSystem);
+  world.getSystem(PanelFaceSystem)!.face = faceHead;
 
   /** Forget where the user dragged the panels, then recentre (new XR session, desktop C key). */
   const resetPlacements = (): void => {
@@ -315,6 +347,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       disposed = true;
       for (const m of modules) m.dispose?.();
       offs.forEach((off) => off());
+      world.unregisterSystem(PanelFaceSystem);
       toasts.dispose();
       if (spinnerTimer !== null) clearInterval(spinnerTimer);
       if (recentreTimer !== null) clearTimeout(recentreTimer);

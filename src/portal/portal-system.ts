@@ -149,10 +149,16 @@ export class PortalSystem extends createSystem({
       this.resetDetectors();
     }
 
+    readHead(this.world, this.head);
+    // The open window always faces the viewer: it turns about Y (staying upright) so its
+    // readable side and the street behind it are presented from wherever the head is.
+    const at = t.window.root.position;
+    t.window.root.rotation.set(0, Math.atan2(this.head.x - at.x, this.head.z - at.z), 0);
+    t.window.root.updateMatrixWorld(true);
+
     t.window.syncPlane();
     const plane = t.window.plane;
 
-    readHead(this.world, this.head);
     if (this.headDetector.update(plane, this.head)) {
       t.flow.enterStreet('head');
       return;

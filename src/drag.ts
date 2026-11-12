@@ -11,7 +11,7 @@
  * `placements` for the rest of the page session.
  */
 import {
-  BoxGeometry,
+  CapsuleGeometry,
   DistanceGrabbable,
   Grabbed,
   Group,
@@ -33,6 +33,7 @@ import { DragGrip, HoverFx } from './track-components.js';
 /** Where the user left each panel this session. */
 export const placements = new PanelPlacements();
 
+const GRIP_WIDTH_M = 0.16;
 const GRIP_HEIGHT_M = 0.022;
 const GRIP_DEPTH_M = 0.012;
 
@@ -84,18 +85,25 @@ export class DragRig {
     this.entity.addComponent(DragGrip, { slot: opts.id });
 
     this.gripMaterial = new MeshBasicMaterial({ color: hexNumber(currentTokens().border), toneMapped: false });
-    this.grip = new Mesh(
-      new BoxGeometry(opts.gripWidthM ?? 0.16, opts.gripHeightM ?? GRIP_HEIGHT_M, GRIP_DEPTH_M),
-      this.gripMaterial,
-    );
+    // The grip is a capsule: a rod with rounded ends, lying along its width (X). Squashing Z
+    // keeps the shallow depth, so a grip keeps the footprint the placement maths expect —
+    // only the shape reads rounded instead of boxy.
+    const heightM = opts.gripHeightM ?? GRIP_HEIGHT_M;
+    const widthM = opts.gripWidthM ?? GRIP_WIDTH_M;
+    this.grip = new Mesh(new CapsuleGeometry(heightM / 2, Math.max(0, widthM - heightM), 4, 16), this.gripMaterial);
+    this.grip.rotation.z = Math.PI / 2; // the capsule's own axis (Y) becomes the bar's length (X)
+    this.grip.scale.z = GRIP_DEPTH_M / heightM;
     this.grip.name = `DragGrip-${opts.id}`;
     setHoverTint(this.grip, [this.gripMaterial], 'border');
     if (opts.grip === false) {
       this.gripEntity = null;
     } else {
       this.gripEntity = world.createTransformEntity(this.grip, { parent: this.entity, persistent: true });
-      this.gripEntity.addComponent(RayInteractable);
-      this.gripEntity.addComponent(HoverFx, { slot: 'grip' });
+      // The press must land on the rig itself. A RayInteractable on the grip would let
+      // InputSystem's own pointerdown handler stopPropagation at the grip, so the press
+      // never bubbles up to the rig's DistanceGrabbable and the grab never starts.
+      // The grip's hover feedback is proxied through the rig instead (HoverFx.target).
+      this.entity.addComponent(HoverFx, { slot: 'grip', target: this.grip.name });
       this.arm();
     }
 

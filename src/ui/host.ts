@@ -16,7 +16,7 @@ export interface Host {
   setVisible(slot: HudSlot, visible: boolean): void;
   /** Click handler plus hover variant for a control; both are removed on dispose. */
   control(el: El | null, variant: HoverVariant, onClick: () => void): void;
-  /** The panel changed size (folded, rows appeared): move its drag grip back under it. */
+  /** The panel changed size (folded, rows appeared): move its drag grip back above it. */
   resized(slot: HudSlot): void;
   /** True once the HUD has been disposed; async work must stop touching panels. */
   readonly disposed: boolean;
