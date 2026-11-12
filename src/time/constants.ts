@@ -17,12 +17,28 @@ export const TIME = {
    */
   dialDirection: 1,
 
+  /** Frame-to-frame twist jump treated as a tracking glitch and ignored, radians (about 60 degrees). */
+  dialMaxJumpRad: (60 * Math.PI) / 180,
+  /** After a dial pinch starts, ignore twist this long: closing the fingers rolls the wrist, ms. */
+  dialSettleMsHand: 120,
+  dialSettleMsController: 0,
+  /**
+   * When the dial hand has swung (not rolled) this far from its pinch-start pose, re-anchor the
+   * start pose and twist axis so wrist roll keeps meaning roll, radians (about 45 degrees).
+   */
+  dialReanchorSwingRad: (45 * Math.PI) / 180,
+
   /** Wrist dial face: diameter, and how far above the dial hand it floats, metres. */
   dialSizeM: 0.09,
   dialLiftM: 0.09,
 
   /** A pinch or trigger must be held this long before push-through starts (ignores taps). */
   pushHoldMs: 300,
+  /**
+   * Hand tracking only: a longer hold before push-through, because a resting hand often
+   * half-pinches by accident. Controllers keep `pushHoldMs`.
+   */
+  pushHoldMsHand: 450,
   /** Letting go mid-push shrinks the lens back this many times faster than it grew. */
   retractSpeed: 2,
   /** Lens shrink time when TIME MACHINE is switched off. */

@@ -30,8 +30,8 @@ import {
   loadBitmap,
   sleep,
 } from './lifecycle.js';
-import type { LoaderDeps } from './lifecycle.js';
-import { pickArrowTargets, textureSizeFor, widthCap } from './pano-math.js';
+import type { LoaderDeps, RetryPolicy } from './lifecycle.js';
+import { FrameGovernor, initialTier, pickArrowTargets, textureSizeFor, widthCap } from './pano-math.js';
 import type { TextureKind, TextureSize } from './pano-math.js';
 import { STAGE_FRAG, STAGE_VERT } from './stage-shader.js';
 
@@ -42,6 +42,25 @@ interface Slot {
 }
 
 const now = (): number => performance.now();
+
+const ON_HEADSET_BROWSER = typeof navigator !== 'undefined' && /OculusBrowser|Quest/i.test(navigator.userAgent);
+
+/** Weak headset Wi-Fi: time out a stalled download and try once more. */
+const PANO_RETRY: RetryPolicy = {
+  timeoutMs: config.network.panoTimeoutMs,
+  retries: config.network.retries,
+  retryDelayMs: config.network.retryDelayMs,
+};
+
+/** What the browser reports about connection and memory, for the starting quality tier. */
+function deviceHints(): { saveData?: boolean; effectiveType?: string; deviceMemoryGb?: number } {
+  if (typeof navigator === 'undefined') return {};
+  const n = navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+    deviceMemory?: number;
+  };
+  return { saveData: n.connection?.saveData, effectiveType: n.connection?.effectiveType, deviceMemoryGb: n.deviceMemory };
+}
 
 /**
  * Production pano stage (Track B). One inside-out sphere, centred on the eye every frame,
@@ -85,7 +104,29 @@ export class ProductionPanoStage implements PanoStage {
   private readonly eyePos = new Vector3();
   private lastFrame = -1;
   private readonly offs: Unsubscribe[] = [];
-  private readonly onSessionStart = () => this.refitCurrent();
+  private readonly onSessionStart = () => {
+    this.governor.resetTiming();
+    this.refitCurrent();
+  };
+  private readonly onSessionEnd = () => this.governor.resetTiming();
+  /** Steps panorama detail down when frames run slow, or after the GPU context was lost. */
+  readonly governor = new FrameGovernor(initialTier(deviceHints()));
+  private readonly onContextLost = (e: Event) => {
+    // Ask the browser to give the context back, and come back smaller: running out of GPU
+    // memory is the usual reason a headset drops the context.
+    e.preventDefault();
+    this.governor.forceTier(this.governor.tier + 1, now());
+    console.warn('[pano] WebGL context lost; quality tier now', this.governor.tier);
+  };
+  private readonly onContextRestored = () => {
+    // three.js re-creates GPU state; re-upload the current panorama at the new, lower cap.
+    this.refitCurrent();
+    this.bus.emit('error', {
+      source: 'pano',
+      message: 'The headset ran short of graphics memory. Showing panoramas at lower detail.',
+      recoverable: true,
+    });
+  };
 
   constructor(
     private readonly world: World,
@@ -136,6 +177,12 @@ export class ProductionPanoStage implements PanoStage {
       }),
     );
     world.renderer.xr.addEventListener('sessionstart', this.onSessionStart);
+    world.renderer.xr.addEventListener('sessionend', this.onSessionEnd);
+    if (this.governor.tier > 0) {
+      console.info(`[pano] starting at quality tier ${this.governor.tier} (Data Saver, slow network or low memory)`);
+    }
+    world.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
+    world.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
   }
 
   // ------------------------------------------------------------------------------------------
@@ -183,10 +230,10 @@ export class ProductionPanoStage implements PanoStage {
     const fadeDone = sleep(fadeOut);
 
     const fullSize = this.sizeFor(pano, 'current');
-    const fullP = loadBitmap(pano.imageUrl, fullSize, ticket.signal, this.deps);
+    const fullP = loadBitmap(pano.imageUrl, fullSize, ticket.signal, this.deps, PANO_RETRY);
     const previewUrl = pano.previewUrl && pano.previewUrl !== pano.imageUrl ? pano.previewUrl : null;
-    const prevP = previewUrl && fullSize.width > widthCap('preview', this.isHeadset())
-      ? loadBitmap(previewUrl, this.previewSize(), ticket.signal, this.deps)
+    const prevP = previewUrl && fullSize.width > widthCap('preview', this.isHeadset(), this.governor.tier)
+      ? loadBitmap(previewUrl, this.previewSize(), ticket.signal, this.deps, PANO_RETRY)
       : null;
     // Never leave an unhandled rejection or an unclosed bitmap behind.
     fullP.catch(() => undefined);
@@ -244,7 +291,7 @@ export class ProductionPanoStage implements PanoStage {
    */
   async loadPast(pano: Pano): Promise<Texture> {
     const ticket = this.pastGate.begin();
-    const bitmap = await loadBitmap(pano.imageUrl, this.sizeFor(pano, 'past'), ticket.signal, this.deps);
+    const bitmap = await loadBitmap(pano.imageUrl, this.sizeFor(pano, 'past'), ticket.signal, this.deps, PANO_RETRY);
     if (!ticket.current) {
       bitmap.close();
       throw abortError();
@@ -289,6 +336,9 @@ export class ProductionPanoStage implements PanoStage {
     this.refitGate.cancel();
     this.offs.forEach((off) => off());
     this.world.renderer.xr.removeEventListener('sessionstart', this.onSessionStart);
+    this.world.renderer.xr.removeEventListener('sessionend', this.onSessionEnd);
+    this.world.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.world.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.lens.pastTexture = null;
     this.material.uniforms.uCur.value = this.blank;
     this.ledger.releaseAll();
@@ -321,6 +371,8 @@ export class ProductionPanoStage implements PanoStage {
       mode: this.mode,
       headset: this.isHeadset(),
       maxTextureSize: this.world.renderer.capabilities.maxTextureSize,
+      qualityTier: this.governor.tier,
+      fps: Math.round(this.governor.fps),
       stencilRef: this.stencilRef,
       arrows: this.arrows.describe(),
     };
@@ -335,13 +387,13 @@ export class ProductionPanoStage implements PanoStage {
     return textureSizeFor(
       pano.width,
       pano.height,
-      widthCap(kind, this.isHeadset()),
+      widthCap(kind, this.isHeadset(), this.governor.tier),
       this.world.renderer.capabilities.maxTextureSize,
     );
   }
 
   private previewSize(): TextureSize {
-    const w = widthCap('preview', this.isHeadset());
+    const w = widthCap('preview', this.isHeadset(), this.governor.tier);
     // thumb_2048 is already 2048 wide; ask for exactly that (a no-op resize on desktop).
     return textureSizeFor(0, 0, w, this.world.renderer.capabilities.maxTextureSize);
   }
@@ -392,7 +444,7 @@ export class ProductionPanoStage implements PanoStage {
     const size = this.sizeFor(cur.pano, 'current');
     if (size.width === cur.bitmap.width) return;
     const pano = cur.pano;
-    loadBitmap(pano.imageUrl, size, ticket.signal, this.deps).then(
+    loadBitmap(pano.imageUrl, size, ticket.signal, this.deps, PANO_RETRY).then(
       (bitmap) => {
         if (!ticket.current || this.cur?.pano !== pano) return bitmap.close();
         this.setCurrent(pano, bitmap);
@@ -401,6 +453,12 @@ export class ProductionPanoStage implements PanoStage {
         if (!isAbortError(err)) console.warn('[pano] refit failed', err);
       },
     );
+  }
+
+  /** Frames ran slow for a while: reload the panorama on screen at the lower cap. */
+  private onTierDropped(): void {
+    console.warn(`[pano] frames slow (${Math.round(this.governor.fps)} fps); quality tier now ${this.governor.tier}`);
+    this.refitCurrent();
   }
 
   private hopTo(pano: Pano): void {
@@ -443,6 +501,13 @@ export class ProductionPanoStage implements PanoStage {
       this.headPos.setFromMatrixPosition(this.world.camera.matrixWorld);
       this.arrows.follow(this.headPos.x, this.headPos.z);
       this.syncArrows();
+      // Judge frame rate only in a session: that is where 72 Hz matters, and a desktop tab
+      // in the background or on a slow monitor must not lower detail for a later session.
+      // Trust the session's reported rate only on a real headset browser: the desktop
+      // emulator reports 72-90 Hz while the page actually renders at the monitor's rate.
+      const session = this.world.session as (XRSession & { frameRate?: number }) | undefined;
+      const hz = ON_HEADSET_BROWSER ? session?.frameRate : undefined;
+      if (session && this.governor.frame(now(), hz)) this.onTierDropped();
     }
 
     const l = this.lens;

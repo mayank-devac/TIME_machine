@@ -101,11 +101,17 @@ describe('loadBitmap', () => {
 
   it('closes a bitmap that finishes decoding after the load was cancelled', async () => {
     const d = deferred<FakeBitmap>();
-    const deps: LoaderDeps<FakeBitmap> = { fetch: async () => okResp, decode: () => d.promise };
+    const decoding = deferred<void>();
+    const deps: LoaderDeps<FakeBitmap> = {
+      fetch: async () => okResp,
+      decode: () => {
+        decoding.resolve();
+        return d.promise;
+      },
+    };
     const ac = new AbortController();
     const p = loadBitmap('u', { width: 1, height: 1, resized: false }, ac.signal, deps);
-    await Promise.resolve();
-    await Promise.resolve();
+    await decoding.promise; // abort only once the decode is under way
     ac.abort();
     const bmp = new FakeBitmap(1, 1);
     d.resolve(bmp);

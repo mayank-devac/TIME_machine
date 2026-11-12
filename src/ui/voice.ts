@@ -20,6 +20,7 @@ interface RecognitionLike {
   onresult: ((e: RecognitionEventLike) => void) | null;
   onerror: ((e: { error?: string }) => void) | null;
   onend: (() => void) | null;
+  onaudiostart?: (() => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -48,24 +49,89 @@ const ERRORS: Record<string, string> = {
   network: 'Speech needs a network connection.',
 };
 
-export function createVoiceInput(lang = 'en-US', host: unknown = globalThis): VoiceInput {
-  const w = host as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
+/** Errors that will not go away by trying again this visit: hide the mic after one. */
+const FATAL = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported']);
+
+export interface VoiceTimings {
+  /** No audio within this long after start: the mic never opened (common inside VR), ms. */
+  startTimeoutMs: number;
+  /** Stop listening after this long whatever happens, ms. */
+  maxListenMs: number;
+}
+
+export const DEFAULT_VOICE_TIMINGS: VoiceTimings = { startTimeoutMs: 5000, maxListenMs: 12000 };
+
+type TimerHost = {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (id: unknown) => void;
+};
+
+export function createVoiceInput(
+  lang = 'en-US',
+  host: unknown = globalThis,
+  timings: VoiceTimings = DEFAULT_VOICE_TIMINGS,
+): VoiceInput {
+  const w = host as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor } & Partial<TimerHost>;
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  const setT = w.setTimeout?.bind(host) ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const clearT = w.clearTimeout?.bind(host) ?? ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>));
   let rec: RecognitionLike | null = null;
+  /** Set after a fatal error: the button shows NO MIC for the rest of the visit. */
+  let broken = false;
   return {
-    supported: Ctor !== undefined,
+    get supported() {
+      return Ctor !== undefined && !broken;
+    },
     get listening() {
       return rec !== null;
     },
     start(handlers) {
-      if (!Ctor || rec) return;
+      if (!Ctor || rec || broken) return;
       const r = new Ctor();
       r.lang = lang;
       r.interimResults = true;
       r.continuous = false;
       r.maxAlternatives = 1;
       let error: string | undefined;
+      let heardAudio = false;
+      let ended = false;
+      const timers: unknown[] = [];
+      // Quest Browser may accept start() inside an immersive session and then never open the
+      // mic or never call onend. Watchdogs make sure the panel always comes back.
+      const finish = (why?: string): void => {
+        if (ended) return;
+        ended = true;
+        timers.forEach((t) => clearT(t));
+        rec = null;
+        handlers.onEnd(why);
+      };
+      timers.push(
+        setT(() => {
+          if (heardAudio || ended) return;
+          error = 'The microphone did not start. Type instead.';
+          try {
+            r.abort();
+          } catch {
+            /* ignore */
+          }
+          finish(error);
+        }, timings.startTimeoutMs),
+        setT(() => {
+          if (ended) return;
+          try {
+            r.stop();
+          } catch {
+            /* ignore */
+          }
+          // Give onend a moment; force it if it never comes.
+          timers.push(setT(() => finish(error), 1500));
+        }, timings.maxListenMs),
+      );
+      r.onaudiostart = () => {
+        heardAudio = true;
+      };
       r.onresult = (e) => {
+        heardAudio = true;
         let text = '';
         let final = false;
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -76,21 +142,23 @@ export function createVoiceInput(lang = 'en-US', host: unknown = globalThis): Vo
       };
       r.onerror = (e) => {
         error = ERRORS[e.error ?? ''] ?? `Speech failed (${e.error ?? 'unknown'}).`;
+        if (FATAL.has(e.error ?? '')) broken = true;
       };
-      r.onend = () => {
-        rec = null;
-        handlers.onEnd(error);
-      };
+      r.onend = () => finish(error);
       rec = r;
       try {
         r.start();
       } catch {
-        rec = null;
-        handlers.onEnd('Could not start the microphone.');
+        broken = true;
+        finish('Could not start the microphone. Type instead.');
       }
     },
     stop() {
-      rec?.stop();
+      try {
+        rec?.stop();
+      } catch {
+        /* already stopped */
+      }
     },
   };
 }

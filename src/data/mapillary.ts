@@ -194,9 +194,33 @@ export class MapillaryClient implements PanoSource {
     return turn;
   }
 
+  /**
+   * One request with a timeout. A network failure or timeout is retried (`config.network`),
+   * because headset Wi-Fi drops packets; an HTTP answer is returned as is.
+   */
+  private async send(url: string): Promise<Response> {
+    const { apiTimeoutMs, retries, retryDelayMs } = config.network;
+    let lastErr: unknown;
+    for (let i = 0; i <= retries; i++) {
+      if (i > 0) await this.sleep(retryDelayMs * i);
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), apiTimeoutMs);
+      try {
+        return await this.fetchImpl(url, { signal: ctl.signal });
+      } catch (err) {
+        lastErr = ctl.signal.aborted
+          ? new Error(`Mapillary did not answer within ${Math.round(apiTimeoutMs / 1000)} s (slow network?)`)
+          : err;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastErr;
+  }
+
   private async attempt(url: string): Promise<unknown> {
     await this.waitTurn();
-    const res = await this.fetchImpl(url);
+    const res = await this.send(url);
     type Body = { error?: { code?: number; message?: string } } | null;
     const body: Body = await (res.json() as Promise<Body>).catch(() => null);
     if (body?.error) {

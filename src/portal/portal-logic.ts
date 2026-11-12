@@ -59,6 +59,12 @@ export interface CrossingOptions {
   streetDepth: number;
   /** Shrink the opening by this much when checking where the crossing happened (metres). */
   inset: number;
+  /**
+   * A single-frame move longer than this is not a person walking: it is a recentre (holding
+   * the Meta button), tracking lost and found, or a hand appearing from the origin. Such a jump
+   * disarms the detector instead of counting as a crossing (metres). Omit for no limit.
+   */
+  maxJumpM?: number;
 }
 
 /**
@@ -71,12 +77,15 @@ export interface CrossingOptions {
 export class CrossingDetector {
   private armed = false;
   private readonly last = { x: 0, y: 0, z: 0 };
+  private readonly prev = { x: 0, y: 0, z: 0 };
+  private hasPrev = false;
 
   constructor(private readonly opts: CrossingOptions) {}
 
   /** Forget history, e.g. after the window was moved or reopened. */
   reset(): void {
     this.armed = false;
+    this.hasPrev = false;
   }
 
   get isArmed(): boolean {
@@ -85,6 +94,15 @@ export class CrossingDetector {
 
   /** Feed the latest position. Returns true on the frame the point goes through. */
   update(plane: WindowPlane, p: Vec3Like): boolean {
+    const max = this.opts.maxJumpM;
+    if (max !== undefined && this.hasPrev) {
+      const jump = Math.hypot(p.x - this.prev.x, p.y - this.prev.y, p.z - this.prev.z);
+      if (jump > max) this.armed = false; // teleported, not walked: re-arm from the new spot
+    }
+    this.prev.x = p.x;
+    this.prev.y = p.y;
+    this.prev.z = p.z;
+    this.hasPrev = true;
     const d = signedDistance(plane, p);
     if (d >= this.opts.roomMargin) {
       this.armed = true;

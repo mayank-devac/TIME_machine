@@ -9,9 +9,11 @@ import { SLOT } from './portal-window.js';
 import type { PortalWindow } from './portal-window.js';
 
 /** Head: must start 10 cm into the room, counts once 5 cm through; 5 cm inset from the frame. */
-const HEAD_CROSSING = { roomMargin: 0.1, streetDepth: 0.05, inset: 0.05 };
+// maxJumpM: a recentre or tracking loss moves the head or hand far in one frame. A walking head
+// moves ~2 cm a frame and a quick hand ~5 cm; the limits allow a long frame hitch on top.
+const HEAD_CROSSING = { roomMargin: 0.1, streetDepth: 0.05, inset: 0.05, maxJumpM: 0.4 };
 /** Hand: a deliberate push, 12 cm through the opening; 8 cm inset so holding the frame never fires. */
-const HAND_CROSSING = { roomMargin: 0.05, streetDepth: 0.12, inset: 0.08 };
+const HAND_CROSSING = { roomMargin: 0.05, streetDepth: 0.12, inset: 0.08, maxJumpM: 0.5 };
 
 /** What the system drives. Set by `entry.ts` right after registration. */
 export interface PortalSystemTarget {

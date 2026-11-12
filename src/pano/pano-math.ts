@@ -67,12 +67,116 @@ export type TextureKind = 'current' | 'past' | 'preview';
 export const PREVIEW_WIDTH = 2048;
 
 /** Width cap for a texture kind, from `config.texture`. Headset = an XR session or Quest Browser. */
-export function widthCap(kind: TextureKind, headset: boolean): number {
+export function widthCap(kind: TextureKind, headset: boolean, tier = 0): number {
   const t = config.texture;
-  const current = headset ? t.currentMaxWidthHeadset : t.currentMaxWidthDesktop;
+  const tiers = config.quality.tiers;
+  const q = tiers[Math.max(0, Math.min(tiers.length - 1, tier))];
+  const current = Math.min(headset ? t.currentMaxWidthHeadset : t.currentMaxWidthDesktop, q.current);
   if (kind === 'current') return current;
-  if (kind === 'past') return t.pastMaxWidth;
+  if (kind === 'past') return Math.min(t.pastMaxWidth, q.past);
   return Math.min(PREVIEW_WIDTH, current);
+}
+
+/**
+ * Starting quality tier from what the browser says about the device before anything renders:
+ * Data Saver or a slow connection, or little memory, start lower. All inputs optional; a
+ * browser that reports nothing starts at tier 0.
+ */
+export function initialTier(hints: { saveData?: boolean; effectiveType?: string; deviceMemoryGb?: number }): number {
+  let tier = 0;
+  if (hints.saveData || hints.effectiveType === '2g' || hints.effectiveType === 'slow-2g') tier = 2;
+  else if (hints.effectiveType === '3g') tier = 1;
+  if (hints.deviceMemoryGb !== undefined && hints.deviceMemoryGb > 0 && hints.deviceMemoryGb < 4) {
+    tier = Math.max(tier, 1);
+  }
+  return Math.min(tier, config.quality.tiers.length - 1);
+}
+
+/**
+ * Watches frame times and decides when to step quality down. Pure: time is passed in.
+ * Compares a smoothed frame time against the display's own period: the XR session's reported
+ * `frameRate` when given (72, 90 or 120 Hz on Quest), otherwise a slow lower envelope of recent
+ * frame times, so neither one hitch nor one unusually short frame moves the bar. The bar is
+ * never stricter than `config.performance.targetHz`.
+ */
+export class FrameGovernor {
+  tier: number;
+  private emaMs = 0;
+  private floorMs = 0;
+  private slowSinceMs = -1;
+  private cooldownUntil = 0;
+  private last = -1;
+
+  constructor(
+    initial = 0,
+    private readonly maxTier = config.quality.tiers.length - 1,
+    private readonly q = config.quality,
+    targetHz: number = config.performance.targetHz,
+  ) {
+    this.tier = Math.min(initial, maxTier);
+    this.targetMs = targetHz > 0 ? 1000 / targetHz : 0;
+  }
+
+  private readonly targetMs: number;
+
+  /** Smoothed frames per second (diagnostics). */
+  get fps(): number {
+    return this.emaMs > 0 ? 1000 / this.emaMs : 0;
+  }
+
+  /** Forget timing history (session start/end changes the display rate). */
+  resetTiming(): void {
+    this.emaMs = 0;
+    this.floorMs = 0;
+    this.slowSinceMs = -1;
+    this.last = -1;
+  }
+
+  /** Jump straight to a tier (never up). Returns true when it changed. */
+  forceTier(tier: number, now: number): boolean {
+    const t = Math.min(this.maxTier, Math.max(this.tier, tier));
+    if (t === this.tier) return false;
+    this.tier = t;
+    this.cooldownUntil = now + this.q.cooldownMs;
+    this.slowSinceMs = -1;
+    return true;
+  }
+
+  /**
+   * Call once per rendered frame with a ms clock, and the display rate in Hz when the platform
+   * reports one. Returns true when the tier just dropped.
+   */
+  frame(now: number, displayHz?: number): boolean {
+    const prev = this.last;
+    this.last = now;
+    if (prev < 0) return false;
+    const dt = now - prev;
+    if (dt <= 0 || dt > this.q.maxFrameGapMs) {
+      this.slowSinceMs = -1; // paused, not slow
+      return false;
+    }
+    if (this.emaMs === 0) {
+      this.emaMs = dt;
+      this.floorMs = dt;
+    } else {
+      this.emaMs += (dt - this.emaMs) * 0.05;
+      // Lower envelope: falls quickly-ish toward shorter frames, rises very slowly.
+      this.floorMs += (dt - this.floorMs) * (dt < this.floorMs ? 0.02 : 0.002);
+    }
+    // Never hold frames to a stricter bar than the app's target rate: a session running above
+    // `targetHz` (90 or 120 Hz) must not cost panorama detail while the target is still met.
+    const displayMs = displayHz && displayHz > 0 ? 1000 / displayHz : this.floorMs;
+    const periodMs = Math.max(displayMs, this.targetMs);
+    if (now < this.cooldownUntil || this.tier >= this.maxTier) return false;
+    const slow = this.emaMs > periodMs / this.q.slowFraction;
+    if (!slow) {
+      this.slowSinceMs = -1;
+      return false;
+    }
+    if (this.slowSinceMs < 0) this.slowSinceMs = now;
+    if (now - this.slowSinceMs < this.q.slowForMs) return false;
+    return this.forceTier(this.tier + 1, now);
+  }
 }
 
 export interface TextureSize {

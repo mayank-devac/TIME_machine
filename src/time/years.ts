@@ -19,7 +19,15 @@ export function buildLadder(panoYears: readonly number[], currentYear: number | 
 }
 
 /** Message for a dial push past either end of the ladder. */
-export function limitMessage(direction: 'earlier' | 'later', edgeYear: number): string {
+export function limitMessage(
+  direction: 'earlier' | 'later',
+  edgeYear: number,
+  presentYear: number | null = null,
+): string {
+  // The year on screen is not a dial stop, so it can sit just past the end of the ladder.
+  if (presentYear !== null && (direction === 'earlier' ? presentYear < edgeYear : presentYear > edgeYear)) {
+    return `${presentYear} is the year you are standing in. Turn off the lens to see it.`;
+  }
   return direction === 'earlier'
     ? `Some years street Unavailable . Earliest is ${edgeYear}.`
     : `No later imagery here. Latest is ${edgeYear}.`;

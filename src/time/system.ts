@@ -1,8 +1,13 @@
 import { InputComponent, Quaternion, Vector3, VisibilityState, createSystem } from '@iwsdk/core';
 import { TIME } from './constants.js';
-import { DialTracker, WheelAccumulator, twistAboutAxis } from './dial.js';
+import { DialTracker, WheelAccumulator, swingAboutAxis, twistAboutAxis } from './dial.js';
+import { CONTROLLER_PRESS, HAND_PRESS, PressDebouncer } from './input-filter.js';
 import { clientToNdcX, clientToNdcY, directionBetween, ndcToDirection } from './lens-math.js';
 import type { TimeMachine } from './time-machine.js';
+
+/** Thumbstick sideways push that fires one year step, and the level it must drop under to fire again. */
+const STICK_FIRE = 0.75;
+const STICK_REARM = 0.35;
 
 type Side = 'left' | 'right';
 
@@ -31,7 +36,13 @@ export class TimeLensSystem extends createSystem({}) {
   private dialStart!: Quaternion;
   private dialNow!: Quaternion;
   private dial!: DialTracker;
+  private handDial!: DialTracker;
+  private controllerDial!: DialTracker;
   private wheel!: WheelAccumulator;
+  private pushFilter!: PressDebouncer;
+  private dialFilter!: PressDebouncer;
+  private lastLensSide: Side = TIME.lensHand;
+  private stickArmed: Record<Side, boolean> = { left: true, right: true };
   private mouseX = 0;
   private mouseY = 0;
   private mouseSeen = false;
@@ -54,8 +65,18 @@ export class TimeLensSystem extends createSystem({}) {
     this.dialAxis = new Vector3(0, 0, -1);
     this.dialStart = new Quaternion();
     this.dialNow = new Quaternion();
-    this.dial = new DialTracker(TIME.dialStepRad);
+    this.handDial = new DialTracker(TIME.dialStepRad, {
+      maxJumpRad: TIME.dialMaxJumpRad,
+      settleMs: TIME.dialSettleMsHand,
+    });
+    this.controllerDial = new DialTracker(TIME.dialStepRad, {
+      maxJumpRad: TIME.dialMaxJumpRad,
+      settleMs: TIME.dialSettleMsController,
+    });
+    this.dial = this.controllerDial;
     this.wheel = new WheelAccumulator(TIME.wheelStepPx);
+    this.pushFilter = new PressDebouncer();
+    this.dialFilter = new PressDebouncer();
 
     const onMove = (e: PointerEvent): void => {
       this.mouseX = e.clientX;
@@ -89,8 +110,18 @@ export class TimeLensSystem extends createSystem({}) {
     let yearDelta = 0;
     let dialGrip: Vector3 | null = null;
 
-    if (this.visibilityState.peek() === VisibilityState.NonImmersive) {
-      this.dial.end();
+    const dtMs = delta * 1000;
+    const visibility = this.visibilityState.peek();
+    if (visibility === VisibilityState.VisibleBlurred) {
+      // System menu or a permission prompt is over the app: inputs are not ours. Let go of
+      // everything so a push does not complete (or a dial step fire) behind the overlay.
+      this.endDial();
+      this.pushFilter.reset();
+      this.dialFilter.reset();
+    } else if (visibility === VisibilityState.NonImmersive) {
+      this.endDial();
+      this.pushFilter.reset();
+      this.dialFilter.reset();
       this.sampleDesktop();
       if (active) {
         const kb = this.input.keyboard;
@@ -101,19 +132,42 @@ export class TimeLensSystem extends createSystem({}) {
       }
     } else {
       const lensSide = this.sampleXr();
+      if (lensSide !== this.lastLensSide) {
+        // The lens moved to the other hand (one hand lost): old press state belongs to the
+        // wrong hand, so start clean rather than carry a half-finished hold across.
+        this.lastLensSide = lensSide;
+        this.pushFilter.reset();
+        this.dialFilter.reset();
+        this.endDial();
+      }
       if (active) {
         const dialSide: Side = lensSide === 'right' ? 'left' : 'right';
         const xr = this.input.xr;
-        pushHeld = xr.getSelectState(lensSide).active;
-        const dialTracked = xr.getPrimaryInputSource(dialSide) !== undefined;
-        dialHeld = dialTracked && xr.getSelectState(dialSide).active;
-        yearDelta = this.sampleDial(dialSide, dialHeld) + this.sampleThumbsticks();
+        const lensSource = xr.getPrimaryInputSource(lensSide);
+        const dialSource = xr.getPrimaryInputSource(dialSide);
+        const lensIsHand = lensSource?.hand != null;
+        tm.machine.setPushHoldMs(lensIsHand ? TIME.pushHoldMsHand : TIME.pushHoldMs);
+        pushHeld = this.pushFilter.update(
+          lensSource !== undefined && xr.getSelectState(lensSide).active,
+          dtMs,
+          lensIsHand ? HAND_PRESS : CONTROLLER_PRESS,
+        );
+        const dialTracked = dialSource !== undefined;
+        const dialIsHand = dialSource?.hand != null;
+        dialHeld = this.dialFilter.update(
+          dialTracked && xr.getSelectState(dialSide).active,
+          dtMs,
+          dialIsHand ? HAND_PRESS : CONTROLLER_PRESS,
+        );
+        yearDelta = this.sampleDial(dialSide, dialHeld && dialTracked, dialIsHand, dtMs) + this.sampleThumbsticks();
         if (dialTracked) {
           this.player.gripSpaces[dialSide].getWorldPosition(this.dialPos);
           dialGrip = this.dialPos;
         }
       } else {
-        this.dial.end();
+        this.endDial();
+        this.pushFilter.reset();
+        this.dialFilter.reset();
         // Keep the present-year label on the dial hand while the machine is off.
         const dialSide: Side = lensSide === 'right' ? 'left' : 'right';
         if (this.input.xr.getPrimaryInputSource(dialSide) !== undefined) {
@@ -171,37 +225,62 @@ export class TimeLensSystem extends createSystem({}) {
    * Pinch and twist: roll of the dial hand since the pinch began, about the direction it
    * was pointing (its target ray) at that moment.
    */
-  private sampleDial(side: Side, held: boolean): number {
+  private sampleDial(side: Side, held: boolean, isHand: boolean, dtMs: number): number {
     if (!held) {
-      this.dial.end();
+      this.endDial();
       return 0;
     }
     const grip = this.player.gripSpaces[side];
     if (!this.dial.isActive) {
-      grip.getWorldQuaternion(this.dialStart);
-      this.player.raySpaces[side].getWorldDirection(this.dialAxis).negate(); // ray points along -Z
+      // Hands get a settle time after the pinch closes; controllers do not need one.
+      this.dial = isHand ? this.handDial : this.controllerDial;
+      this.anchorDial(side);
       this.dial.begin(0);
       return 0;
     }
     grip.getWorldQuaternion(this.dialNow);
     const a = this.dialAxis;
-    return this.dial.update(twistAboutAxis(this.dialStart, this.dialNow, a.x, a.y, a.z)) * TIME.dialDirection;
+    if (swingAboutAxis(this.dialStart, this.dialNow, a.x, a.y, a.z) > TIME.dialReanchorSwingRad) {
+      // The arm swung a long way: twist about the old axis would now mix in swing and drift.
+      // Re-anchor on the current pose; progress toward the next click is kept.
+      this.anchorDial(side);
+      this.dial.rebase(0);
+      return 0;
+    }
+    return this.dial.update(twistAboutAxis(this.dialStart, this.dialNow, a.x, a.y, a.z), dtMs) * TIME.dialDirection;
   }
 
-  /** Controller fallback: a flick of either thumbstick. Left is earlier, right is later. */
+  /** Reference pose for the dial: grip orientation now, twist axis = where the hand points now. */
+  private anchorDial(side: Side): void {
+    this.player.gripSpaces[side].getWorldQuaternion(this.dialStart);
+    this.player.raySpaces[side].getWorldDirection(this.dialAxis).negate(); // ray points along -Z
+    this.dialAxis.normalize();
+  }
+
+  private endDial(): void {
+    this.handDial.end();
+    this.controllerDial.end();
+  }
+
+  /**
+   * Controller fallback: a flick of either thumbstick. Left is earlier, right is later.
+   * Exactly one step per flick: a stick must be pushed mostly sideways past `STICK_FIRE`, and
+   * only re-arms after it falls back under `STICK_REARM`. Never more than one step a frame.
+   */
   private sampleThumbsticks(): number {
     const pads = this.input.xr.gamepads;
     let d = 0;
-    const l = pads.left;
-    const r = pads.right;
-    if (l) {
-      if (l.getAxesEnteringLeft(InputComponent.Thumbstick)) d -= 1;
-      if (l.getAxesEnteringRight(InputComponent.Thumbstick)) d += 1;
+    for (const side of ['left', 'right'] as const) {
+      const v = pads[side]?.getAxesValues(InputComponent.Thumbstick);
+      const x = v?.x ?? 0;
+      const y = v?.y ?? 0;
+      if (Math.abs(x) < STICK_REARM) {
+        this.stickArmed[side] = true;
+      } else if (this.stickArmed[side] && Math.abs(x) > STICK_FIRE && Math.abs(x) > Math.abs(y) * 1.5) {
+        this.stickArmed[side] = false;
+        d += x < 0 ? -1 : 1;
+      }
     }
-    if (r) {
-      if (r.getAxesEnteringLeft(InputComponent.Thumbstick)) d -= 1;
-      if (r.getAxesEnteringRight(InputComponent.Thumbstick)) d += 1;
-    }
-    return d;
+    return Math.max(-1, Math.min(1, d));
   }
 }

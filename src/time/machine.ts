@@ -52,6 +52,11 @@ export class LensMachine {
 
   constructor(private readonly t: LensTuning) {}
 
+  /** Hold time before push-through starts. Changes with the input kind (hand or controller). */
+  setPushHoldMs(ms: number): void {
+    this.t.pushHoldMs = ms;
+  }
+
   /** Capture year of the panorama on screen (the present), or null. */
   get presentYear(): number | null {
     return this.currentYear;

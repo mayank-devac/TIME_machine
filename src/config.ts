@@ -57,6 +57,41 @@ export const config = {
     targetHz: 72,
   },
 
+  /**
+   * Automatic quality fallback. Tier 0 is the normal caps in `texture`; each later tier caps
+   * panorama widths lower. The app only ever steps DOWN during a visit (no oscillation).
+   * UNTESTED on device: thresholds chosen on paper.
+   */
+  quality: {
+    tiers: [
+      { current: 8192, past: 4096 },
+      { current: 4096, past: 3072 },
+      { current: 3072, past: 2048 },
+      { current: 2048, past: 2048 },
+    ],
+    /** Smoothed frame rate below this fraction of the session's frame rate counts as slow. */
+    slowFraction: 0.85,
+    /** Slow frames must persist this long before stepping down a tier, ms. */
+    slowForMs: 2500,
+    /** After a step down, wait this long before judging again (the reload itself costs frames), ms. */
+    cooldownMs: 6000,
+    /** Ignore frame gaps longer than this (tab hidden, headset off, system menu), ms. */
+    maxFrameGapMs: 250,
+  },
+
+  network: {
+    /**
+     * Give up on one panorama image request when no bytes arrive for this long, ms. A stall
+     * timer, not a total cap: a slow but moving download (3+ MB over weak Wi-Fi) always finishes.
+     */
+    panoTimeoutMs: 15000,
+    /** Give up on one Mapillary API request after this long, ms. */
+    apiTimeoutMs: 12000,
+    /** Retries after a network failure or timeout (not after a 4xx). */
+    retries: 1,
+    retryDelayMs: 800,
+  },
+
   /** Where the stage sphere sits relative to the head. Far enough to read as infinitely distant. */
   sphereRadiusM: 50,
 } as const;

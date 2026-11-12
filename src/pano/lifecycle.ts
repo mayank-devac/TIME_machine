@@ -149,6 +149,8 @@ export interface LoaderDeps<B extends BitmapLike = ImageBitmap> {
     ok: boolean;
     status: number;
     blob(): Promise<Blob>;
+    /** When present, the body is read chunk by chunk so the timeout measures stalls, not size. */
+    body?: ReadableStream<Uint8Array> | null;
   }>;
   decode: (blob: Blob, options: ImageBitmapOptions) => Promise<B>;
 }
@@ -163,16 +165,104 @@ export const browserLoaderDeps = (): LoaderDeps => ({
  * (`createImageBitmap` with `resizeWidth/Height`). Rows stay top-first (no flip): the shader
  * samples with v = 0 at the top. Aborting closes any bitmap already decoded.
  */
+export interface RetryPolicy {
+  /**
+   * Abort one attempt when no bytes have arrived for this long, ms (a stall, not a total-time
+   * cap: a slow but moving download on weak Wi-Fi is never cut off). 0 = no timeout.
+   */
+  timeoutMs: number;
+  /** Extra attempts after a network error, timeout or 5xx. A 4xx is never retried. */
+  retries: number;
+  retryDelayMs: number;
+}
+
+export const NO_RETRY: RetryPolicy = { timeoutMs: 0, retries: 0, retryDelayMs: 0 };
+
+export class TimeoutError extends Error {
+  constructor(ms: number) {
+    super(`timed out after ${Math.round(ms / 1000)} s (slow network?)`);
+    this.name = 'TimeoutError';
+  }
+}
+
+class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`panorama fetch failed (${status})`);
+  }
+}
+
+/**
+ * Fetch the whole body with a per-attempt timeout and retries. The outer `signal` still wins:
+ * aborting it rejects with an AbortError at once and never retries.
+ */
+export async function fetchBlobWithRetry(
+  url: string,
+  signal: AbortSignal,
+  fetchFn: LoaderDeps['fetch'],
+  policy: RetryPolicy,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<Blob> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= policy.retries; attempt++) {
+    if (signal.aborted) throw abortError();
+    if (attempt > 0) {
+      await wait(policy.retryDelayMs * attempt);
+      if (signal.aborted) throw abortError();
+    }
+    const inner = new AbortController();
+    const onAbort = (): void => inner.abort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // (Re)start the stall timer. Called at request start and again on every received chunk.
+    const arm = (): void => {
+      if (policy.timeoutMs <= 0) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        inner.abort();
+      }, policy.timeoutMs);
+    };
+    arm();
+    try {
+      const resp = await fetchFn(url, { signal: inner.signal, mode: 'cors' });
+      if (!resp.ok) throw new HttpError(resp.status);
+      if (!resp.body) return await resp.blob();
+      const reader = resp.body.getReader();
+      const chunks: Uint8Array[] = [];
+      try {
+        for (;;) {
+          arm();
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return new Blob(chunks as BlobPart[]);
+    } catch (err) {
+      if (signal.aborted) throw abortError();
+      lastErr = timedOut ? new TimeoutError(policy.timeoutMs) : err;
+      // A 4xx will not change on retry (an expired or bad URL): fail now.
+      if (err instanceof HttpError && err.status < 500) throw err;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+  throw lastErr;
+}
+
 export async function loadBitmap<B extends BitmapLike>(
   url: string,
   size: { width: number; height: number; resized: boolean },
   signal: AbortSignal,
   deps: LoaderDeps<B>,
+  policy: RetryPolicy = NO_RETRY,
 ): Promise<B> {
   if (signal.aborted) throw abortError();
-  const resp = await deps.fetch(url, { signal, mode: 'cors' });
-  if (!resp.ok) throw new Error(`panorama fetch failed (${resp.status})`);
-  const blob = await resp.blob();
+  const blob = await fetchBlobWithRetry(url, signal, deps.fetch, policy);
   if (signal.aborted) throw abortError();
   const options: ImageBitmapOptions = size.resized
     ? { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: 'high' }

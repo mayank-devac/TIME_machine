@@ -3,7 +3,35 @@
 Nobody has run this on a Meta Quest. Everything below is unknown until someone does.
 Add to this list; do not remove items without a device test.
 
+## Emulator pass, 2026-11-12 (Meta Quest 3 profile, IWER)
+
+Verified in the emulator only: table mode renders (map, coverage layer, panels);
+controller ray hover + click enters street; street bar TIME MACHINE click opens the
+lens; push-through fills the view with the past year; held trigger + 25° wrist roll
+steps the year (2022 -> 2023, logs confirm) and the "earliest" limit toast fires at
+the ladder edge; clicking a hop arrow hops panoramas with the machine still on.
+New unknowns found during that pass:
+
+- Settings panel opens 66 degrees to the right of forward — beyond a Quest's
+  ~45-49 degree per-side field of view. Places panel sits 52 degrees left in street
+  mode (partially out). Both are draggable, but they open out of view. Needs
+  placement or an on-device decision.
+- A trigger release over a HUD button clicks it: after turning TIME MACHINE off
+  with the ray still on its button, the same click hazard exists for any
+  hold-then-release over a panel. Check on device whether push-through release
+  over a panel button causes stray presses.
+- The dial reported "earliest" blocked at 2022 while the places row for that street
+  lists 2016 — the row shows archive photo years, the ladder uses panorama
+  coverage years. Confirm which is right on a real street before trusting the
+  dial's reach.
+
 - Real frame rate (72 Hz target) with the stage sphere, lens shader and map plane.
+- Quality governor: whether the session's `frameRate` really reports 72 on Quest (the app never
+  asks for more), and whether the "slow" bar (85% of `max(session period, 72 Hz period)`) steps
+  down only when it should. Hand-tracking filter numbers (35/110 ms debounce, 60° dial glitch
+  limit, 120 ms settle) have never been checked against a real tracked-hand trace.
+- Panorama stall timeout (15 s with no bytes): whether Quest Browser streams the Mapillary
+  image body in chunks (so slow Wi-Fi never trips it) or delivers it in one piece.
 - GPU memory headroom: whether two 5760-wide panorama textures fit; the real
   `MAX_TEXTURE_SIZE`; behaviour when exceeded.
 - Whether Quest Browser composites the opaque sphere over passthrough as the emulator does.

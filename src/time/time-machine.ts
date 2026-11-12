@@ -16,14 +16,29 @@ import { limitMessage, sortedYears } from './years.js';
 const DEV = import.meta.env.DEV;
 
 /**
+ * Comfort mode: the OS asks for reduced motion, or the URL has `?comfort=1`. The lens opens
+ * with a short ripple, the rim and edge shimmer stop moving, and push-through is shorter so
+ * the view spends less time half-filled. For people who feel the animated edge in their gut.
+ */
+function comfortMode(): boolean {
+  try {
+    if (typeof location !== 'undefined' && /[?&]comfort=1\b/.test(location.search)) return true;
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+const COMFORT = comfortMode();
+
+/**
  * Glue between the pure lens state machine, the event bus and the stage. Owns no input:
  * `TimeLensSystem` samples hands, mouse and keys and calls `frame()` once per frame.
  */
 export class TimeMachine {
   readonly machine = new LensMachine({
     radius: config.lens.defaultRadius,
-    openRippleMs: config.lens.openRippleMs,
-    pushThroughMs: config.lens.pushThroughMs,
+    openRippleMs: COMFORT ? Math.min(250, config.lens.openRippleMs) : config.lens.openRippleMs,
+    pushThroughMs: COMFORT ? Math.min(1000, config.lens.pushThroughMs) : config.lens.pushThroughMs,
     maxDistortion: config.lens.maxDistortion,
     pushHoldMs: TIME.pushHoldMs,
     retractSpeed: TIME.retractSpeed,
@@ -250,7 +265,7 @@ export class TimeMachine {
         this.lastLimitSec = timeSec;
         this.ctx.bus.emit('error', {
           source: 'time',
-          message: limitMessage(m.blocked.direction, m.blocked.edgeYear),
+          message: limitMessage(m.blocked.direction, m.blocked.edgeYear, m.presentYear),
           recoverable: true,
         });
       }
@@ -274,7 +289,9 @@ export class TimeMachine {
       }
       lens.radius = m.radius;
       lens.feather = config.lens.feather;
-      lens.time = timeSec;
+      // Comfort mode freezes the shimmer clock: no moving pattern at the edge of vision.
+      const shimmerSec = COMFORT ? 0 : timeSec;
+      lens.time = shimmerSec;
       // Show the past only when the texture on the stage belongs to this spot. While a newly
       // dialled year loads, the previous year stays visible rather than flashing the present.
       lens.enabled = lens.pastTexture !== null && this.loadedId !== null && m.yearHasPano;
@@ -283,8 +300,8 @@ export class TimeMachine {
         lens.direction,
         m.radius,
         rimOpacity(m.radius, TIME.rimFadeStartRad),
-        m.ripple,
-        timeSec,
+        COMFORT ? 1 : m.ripple,
+        shimmerSec,
         !m.yearHasPano,
         stage.stencilRef,
       );
