@@ -1,7 +1,7 @@
 import type { ArchiveService, Track, TrackFactory } from '../contracts.js';
 import { createCommonsService } from './commons.js';
 import { createController } from './controller.js';
-import { ArchiveFadeSystem, createFrameRenderer } from './frames.js';
+import { ArchiveFadeSystem, createFrameRenderer, followTheme, forgetFramePlacements } from './frames.js';
 
 /** Dev driver (fixture events, no other track needed). MUST be false when finishing. */
 const DEV_DRIVER = false;
@@ -16,6 +16,11 @@ export const createTrack: TrackFactory = (ctx): Track & ArchiveService => {
     service,
     renderer: createFrameRenderer(ctx.world),
   });
+  const offTheme = followTheme();
+  // The world origin moves when an XR session starts or ends; dragged spots stop meaning anything.
+  const xr = ctx.world.renderer.xr;
+  xr.addEventListener('sessionstart', forgetFramePlacements);
+  xr.addEventListener('sessionend', forgetFramePlacements);
   if (import.meta.env.DEV) {
     (window as unknown as { __archive: unknown }).__archive = service;
     ctx.bus.on('archive:visible', ({ photos }) =>
@@ -28,6 +33,13 @@ export const createTrack: TrackFactory = (ctx): Track & ArchiveService => {
   return {
     name: 'archive',
     photosNear: (lat, lng, beforeYear) => service.photosNear(lat, lng, beforeYear),
-    dispose: stopController,
+    dispose() {
+      stopController();
+      offTheme();
+      xr.removeEventListener('sessionstart', forgetFramePlacements);
+      xr.removeEventListener('sessionend', forgetFramePlacements);
+      forgetFramePlacements();
+      ctx.world.unregisterSystem(ArchiveFadeSystem);
+    },
   };
 };

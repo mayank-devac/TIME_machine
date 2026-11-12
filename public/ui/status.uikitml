@@ -1,3 +1,20 @@
-<div id="status-root" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 70; height: 9; background-color: #0f121c99; border-color: #ffffff2e; border-width: 0.3; border-radius: 4.5;">
-  <span id="status-text" style="font-size: 3.4; font-weight: medium; color: #ffffff; text-align: center;">Loading...</span>
+<style>
+  .toast {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 70;
+    height: 9;
+    border-width: 0.3;
+    border-radius: 4.5;
+  }
+  .label {
+    font-size: 3.2;
+    font-weight: medium;
+    text-align: center;
+  }
+</style>
+<div id="status-root" class="toast">
+  <span id="status-text" class="label">Loading...</span>
 </div>

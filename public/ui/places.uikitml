@@ -1,32 +1,107 @@
-<div id="places-root" style="display: flex; flex-direction: column; align-items: center; gap: 2; padding: 3; width: 62; background-color: #0f121c99; border-color: #ffffff38; border-width: 0.3; border-radius: 6;">
-  <span id="places-title" style="font-size: 2.8; font-weight: medium; color: #ffffffcc;">PLACES WITH PAST IMAGERY</span>
-  <div id="place-row-0" style="display: none; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 9; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4.5; cursor: pointer;">
-    <span id="place-name-0" style="font-size: 3.2; font-weight: medium; color: #ffffff;">Place</span>
-    <span id="place-years-0" style="font-size: 2.6; font-weight: medium; color: #ffb84d;">2016-2025</span>
+<style>
+  .panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+    padding-left: 3;
+    padding-right: 3;
+    padding-top: 3;
+    padding-bottom: 3;
+    border-width: 0.3;
+    border-radius: 4;
+  }
+  .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .title {
+    font-size: 2.8;
+    font-weight: medium;
+    text-align: left;
+  }
+  .fold {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 7;
+    height: 7;
+    border-width: 0.3;
+    border-radius: 3.5;
+    cursor: pointer;
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+  }
+  .btn {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 8;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+  .label {
+    font-size: 3.2;
+    font-weight: medium;
+    text-align: center;
+  }
+  .small {
+    font-size: 2.6;
+    font-weight: medium;
+    text-align: center;
+  }
+  .row {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 8;
+    padding-left: 4;
+    padding-right: 4;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+</style>
+<div id="places-root" class="panel" style="width: 62;">
+  <div class="header" style="width: 56;">
+    <span id="places-title" class="title">PLACES WITH PAST IMAGERY</span>
+    <div id="places-fold" class="fold"><span id="places-fold-label" class="label">-</span></div>
   </div>
-  <div id="place-row-1" style="display: none; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 9; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4.5; cursor: pointer;">
-    <span id="place-name-1" style="font-size: 3.2; font-weight: medium; color: #ffffff;">Place</span>
-    <span id="place-years-1" style="font-size: 2.6; font-weight: medium; color: #ffb84d;">2016-2025</span>
-  </div>
-  <div id="place-row-2" style="display: none; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 9; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4.5; cursor: pointer;">
-    <span id="place-name-2" style="font-size: 3.2; font-weight: medium; color: #ffffff;">Place</span>
-    <span id="place-years-2" style="font-size: 2.6; font-weight: medium; color: #ffb84d;">2016-2025</span>
-  </div>
-  <div id="place-row-3" style="display: none; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 9; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4.5; cursor: pointer;">
-    <span id="place-name-3" style="font-size: 3.2; font-weight: medium; color: #ffffff;">Place</span>
-    <span id="place-years-3" style="font-size: 2.6; font-weight: medium; color: #ffb84d;">2016-2025</span>
-  </div>
-  <div id="place-row-4" style="display: none; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 9; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4.5; cursor: pointer;">
-    <span id="place-name-4" style="font-size: 3.2; font-weight: medium; color: #ffffff;">Place</span>
-    <span id="place-years-4" style="font-size: 2.6; font-weight: medium; color: #ffb84d;">2016-2025</span>
-  </div>
-  <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; width: 56; height: 7;">
-    <div id="places-prev" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 14; height: 7; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;">
-      <span id="places-prev-label" style="font-size: 2.8; font-weight: medium; color: #ffffff;">PREV</span>
+  <div id="places-content" class="content">
+    <div id="place-row-0" class="row" style="width: 56;">
+      <span id="place-name-0" class="label">Place</span>
+      <span id="place-years-0" class="small">2016-2025</span>
     </div>
-    <span id="places-page" style="font-size: 2.6; font-weight: medium; color: #ffffffcc;">1 / 1</span>
-    <div id="places-next" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 14; height: 7; background-color: #7c6cff59; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;">
-      <span id="places-next-label" style="font-size: 2.8; font-weight: medium; color: #ffffff;">NEXT</span>
+    <div id="place-row-1" class="row" style="width: 56;">
+      <span id="place-name-1" class="label">Place</span>
+      <span id="place-years-1" class="small">2016-2025</span>
+    </div>
+    <div id="place-row-2" class="row" style="width: 56;">
+      <span id="place-name-2" class="label">Place</span>
+      <span id="place-years-2" class="small">2016-2025</span>
+    </div>
+    <div id="place-row-3" class="row" style="width: 56;">
+      <span id="place-name-3" class="label">Place</span>
+      <span id="place-years-3" class="small">2016-2025</span>
+    </div>
+    <div id="place-row-4" class="row" style="width: 56;">
+      <span id="place-name-4" class="label">Place</span>
+      <span id="place-years-4" class="small">2016-2025</span>
+    </div>
+    <div id="places-pager" class="header" style="width: 56;">
+      <div id="places-prev" class="btn" style="width: 16;"><span id="places-prev-label" class="small">PREV</span></div>
+      <span id="places-page" class="small">1 / 1</span>
+      <div id="places-next" class="btn" style="width: 16;"><span id="places-next-label" class="small">NEXT</span></div>
     </div>
   </div>
 </div>

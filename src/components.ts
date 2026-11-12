@@ -1,6 +1,8 @@
 import { defineComponents } from '@iwsdk/core';
 import {
   ArchivePhotoTag,
+  DragGrip,
+  HoverFx,
   HudTag,
   MapTableTag,
   PanoSphereTag,
@@ -15,4 +17,6 @@ export default defineComponents([
   PortalFrameTag,
   ArchivePhotoTag,
   HudTag,
+  HoverFx,
+  DragGrip,
 ]);

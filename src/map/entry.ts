@@ -1,6 +1,7 @@
 import type { MapTable, Track, TrackFactory } from '../contracts.js';
 import { LandingPage } from './landing.js';
-import { BASE_MAP_KINDS, TableMap, type BaseMapKind } from './table.js';
+import { onThemeChange } from '../theme.js';
+import { TableMap, mapCredit } from './table.js';
 
 /**
  * Dev evidence switches. Both must be false when committed for integration.
@@ -18,12 +19,12 @@ export interface MapTrack extends Track, MapTable {
 
 /** Track D entry: the tabletop map and the 2D landing page. */
 export const createTrack: TrackFactory = (ctx): MapTrack => {
-  const { world, bus, state, services } = ctx;
+  const { world, bus, state, services, prefs } = ctx;
   const spots = services.source.spots();
   const start = spots[0] ?? { lat: 40.758, lng: -73.9855 };
   const token = import.meta.env.VITE_MAPILLARY_TOKEN as string | undefined;
 
-  const table = new TableMap(world, bus, start, token || undefined);
+  const table = new TableMap(world, bus, start, token || undefined, prefs.get());
   table.setSpots(spots);
 
   const landing = new LandingPage(
@@ -33,17 +34,20 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
         table.flyTo(p.lat, p.lng, 17);
         bus.emit('spot:selected', { lat: p.lat, lng: p.lng, label: p.label });
       },
-      views: {
-        options: BASE_MAP_KINDS,
-        current: table.getBaseMap(),
-        onChange: (id) => table.setBaseMap(id as BaseMapKind),
-      },
-      buildings3d: { current: table.get3D(), onChange: (on) => table.set3D(on) },
     },
     spots,
   );
+  // The card names whoever really supplies the map now showing, so it follows the settings.
+  const syncCredit = (): void => landing.setCredit(mapCredit(table.getBaseMap(), table.get3D()));
+  syncCredit();
 
   const offFly = bus.on('map:flyRequested', ({ lat, lng, zoom }) => table.flyTo(lat, lng, zoom ?? 17));
+  // Settings live on the HUD's settings panel; the table and the card just follow them.
+  const offPrefs = bus.on('prefs:changed', (p) => {
+    table.applyPrefs(p);
+    syncCredit();
+  });
+  const offTheme = onThemeChange((t) => landing.setTheme(t));
   const inXR = (): boolean => !!world.session || world.renderer.xr.isPresenting;
   const syncLanding = (): void => landing.setVisible(state.get().mode === 'table' && !inXR());
 
@@ -53,7 +57,11 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
     syncLanding();
   });
   const xr = world.renderer.xr;
-  const onSession = (): void => syncLanding();
+  const onSession = (): void => {
+    // The world origin moves with the session, so a dragged table goes back to its default spot.
+    table.resetPlacement();
+    syncLanding();
+  };
   xr.addEventListener('sessionstart', onSession);
   xr.addEventListener('sessionend', onSession);
   if (state.get().mode === 'table') table.show();
@@ -116,6 +124,8 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
       offTrace.forEach((off) => off());
       offMode();
       offFly();
+      offPrefs();
+      offTheme();
       xr.removeEventListener('sessionstart', onSession);
       xr.removeEventListener('sessionend', onSession);
       landing.dispose();

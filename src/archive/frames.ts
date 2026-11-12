@@ -3,13 +3,16 @@ import {
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  RayInteractable,
   SRGBColorSpace,
   Vector3,
   createSystem,
 } from '@iwsdk/core';
 import type { Entity, World } from '@iwsdk/core';
 import type { ArchivePhoto } from '../contracts.js';
-import { ArchivePhotoTag } from '../track-components.js';
+import { DragRig, placements } from '../drag.js';
+import { currentTokens, onThemeChange, withAlpha } from '../theme.js';
+import { ArchivePhotoTag, HoverFx } from '../track-components.js';
 import type { PhotoRenderer } from './controller.js';
 
 /** Layout constants. Distances are metres, angles degrees. */
@@ -26,8 +29,15 @@ const CANVAS_W = 800;
 const PAD = 24;
 const CAPTION_H = 210;
 
+/** Panel ids of the frames in `placements`: `archive-0`, `archive-1`, ... by position in the arc. */
+export const ARCHIVE_ID_PREFIX = 'archive-';
+
 interface Frame {
   entity: Entity;
+  /** What the user grabs to move the frame; the photo mesh is its child. */
+  rig: DragRig;
+  photo: ArchivePhoto;
+  canvas: HTMLCanvasElement;
   mesh: Mesh;
   material: MeshBasicMaterial;
   texture: CanvasTexture;
@@ -66,20 +76,35 @@ export function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: num
   return lines;
 }
 
-/** Draw photo + caption (year, title, credit) onto one canvas. */
-export function drawFrame(photo: ArchivePhoto, image: CanvasImageSource, iw: number, ih: number): HTMLCanvasElement {
-  const photoW = CANVAS_W - PAD * 2;
-  const photoH = Math.round(Math.min(560, Math.max(300, (photoW * ih) / iw)));
-  const canvas = document.createElement('canvas');
-  canvas.width = CANVAS_W;
+/** Size of the photo area on a frame canvas for an image of `iw` x `ih`. */
+function photoBox(iw: number, ih: number): { w: number; h: number } {
+  const w = CANVAS_W - PAD * 2;
+  return { w, h: Math.round(Math.min(560, Math.max(300, (w * ih) / iw))) };
+}
+
+/**
+ * Draw photo + caption (year, title, credit) onto one canvas, in the current theme's colours.
+ * Pass `into` to redraw an existing frame canvas (theme change) instead of making a new one.
+ */
+export function drawFrame(
+  photo: ArchivePhoto,
+  image: CanvasImageSource,
+  iw: number,
+  ih: number,
+  into?: HTMLCanvasElement,
+): HTMLCanvasElement {
+  const t = currentTokens();
+  const { w: photoW, h: photoH } = photoBox(iw, ih);
+  const canvas = into ?? document.createElement('canvas');
+  canvas.width = CANVAS_W; // also clears it
   canvas.height = PAD + photoH + CAPTION_H;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = 'rgba(15,18,28,0.82)'; // dark glass card
+  ctx.fillStyle = t.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.strokeStyle = t.border;
   ctx.lineWidth = 3;
   ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillStyle = withAlpha(t.textPrimary, 0.12); // a faint mat around the photo
   ctx.fillRect(PAD - 6, PAD - 6, photoW + 12, photoH + 12);
   // cover-fit the image into the photo box
   const scale = Math.max(photoW / iw, photoH / ih);
@@ -94,14 +119,14 @@ export function drawFrame(photo: ArchivePhoto, image: CanvasImageSource, iw: num
 
   const top = PAD + photoH;
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#ffb84d';
+  ctx.fillStyle = t.warning; // the past
   ctx.font = '300 76px system-ui, sans-serif';
   ctx.fillText(String(photo.year), PAD, top + 76);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = t.textPrimary;
   ctx.font = '500 30px system-ui, sans-serif';
   ctx.fillText(ellipsize(ctx, photo.title, photoW - 230), PAD + 200, top + 62);
   ctx.font = '26px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.fillStyle = t.textSecondary;
   const credit = `Photo: ${photo.creator} · ${photo.license} · Wikimedia Commons`;
   wrapLines(ctx, credit, photoW, 2).forEach((l, i) => ctx.fillText(l, PAD, top + 118 + i * 34));
   return canvas;
@@ -132,6 +157,33 @@ function disposeFrame(f: Frame): void {
   if (i >= 0) live.splice(i, 1);
   f.texture.dispose();
   f.entity.dispose(); // also frees geometry and material; never destroy()
+  f.rig.dispose();
+}
+
+/**
+ * Redraw a frame's card in the current theme. The photo itself is copied out of the frame's
+ * own canvas first (the decoded bitmap was closed long ago), so nothing is fetched again.
+ */
+function repaintFrame(f: Frame): void {
+  const { w, h } = photoBox(f.canvas.width - PAD * 2, f.canvas.height - PAD - CAPTION_H);
+  const copy = document.createElement('canvas');
+  copy.width = w;
+  copy.height = h;
+  copy.getContext('2d')?.drawImage(f.canvas, PAD, PAD, w, h, 0, 0, w, h);
+  drawFrame(f.photo, copy, w, h, f.canvas);
+  f.texture.needsUpdate = true;
+}
+
+/** Repaint every live frame when the theme changes. Returns the unsubscribe function. */
+export function followTheme(): () => void {
+  return onThemeChange(() => {
+    for (const f of live) repaintFrame(f);
+  });
+}
+
+/** Forget where the user dragged the frames (the world origin moved with an XR session). */
+export function forgetFramePlacements(): void {
+  placements.deletePrefix(ARCHIVE_ID_PREFIX);
 }
 
 export function liveFrameCount(): number {
@@ -184,17 +236,30 @@ export function createFrameRenderer(world: World): PhotoRenderer {
         const material = new MeshBasicMaterial({ map: texture, transparent: true, opacity: 0, toneMapped: false });
         const mesh = new Mesh(new PlaneGeometry(1, 1), material);
         mesh.scale.set(LAYOUT.frameWidthM, (LAYOUT.frameWidthM * canvas.height) / canvas.width, 1);
-        const a = yaw + (angles[i] * Math.PI) / 180;
-        const lift = ok.length % 2 === 1 && angles[i] === 0 ? LAYOUT.centreLiftM : 0;
-        mesh.position.set(
-          head.x + Math.sin(a) * LAYOUT.distanceM,
-          head.y + lift,
-          head.z - Math.cos(a) * LAYOUT.distanceM,
-        );
-        mesh.lookAt(head.x, mesh.position.y, head.z); // face the viewer (the photo turns, not the user)
-        const entity = world.createTransformEntity(mesh, { persistent: true });
+        // The frame is grabbed by its own body (no grip bar) and remembers where it was left:
+        // the same slot in the arc opens there again for the rest of the session.
+        const rig = new DragRig(world, { id: `${ARCHIVE_ID_PREFIX}${i}`, grip: false });
+        const left = placements.get(rig.id);
+        if (left) {
+          rig.root.position.set(left.x, left.y, left.z);
+          rig.root.lookAt(head);
+        } else {
+          const a = yaw + (angles[i] * Math.PI) / 180;
+          const lift = ok.length % 2 === 1 && angles[i] === 0 ? LAYOUT.centreLiftM : 0;
+          rig.root.position.set(
+            head.x + Math.sin(a) * LAYOUT.distanceM,
+            head.y + lift,
+            head.z - Math.cos(a) * LAYOUT.distanceM,
+          );
+          // Face the viewer (the photo turns, not the user), staying upright.
+          rig.root.lookAt(head.x, rig.root.position.y, head.z);
+        }
+        const entity = world.createTransformEntity(mesh, { parent: rig.entity, persistent: true });
         entity.addComponent(ArchivePhotoTag, { slot: photo.pageUrl, value: photo.year });
-        live.push({ entity, mesh, material, texture, target: 1 });
+        entity.addComponent(RayInteractable);
+        entity.addComponent(HoverFx, { slot: 'default' });
+        rig.arm(); // now that the photo mesh is under the rig
+        live.push({ entity, rig, photo, canvas, mesh, material, texture, target: 1 });
       });
       return ok.map((x) => x.photo);
     },

@@ -351,7 +351,7 @@ describe('placesNear grows when quiet and stops when busy', () => {
     const { client, fetchImpl } = setup(() => ({ data: crowd(1200, 40) }));
     const places = await client.placesNear(40.758, -73.9855);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(places.length).toBe(30);
+    expect(places.length).toBe(15); // MAX_PLACES
   });
 
   it('normal: walks nearby tiles nearest first until the list is full', async () => {

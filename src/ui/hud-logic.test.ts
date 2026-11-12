@@ -50,14 +50,14 @@ describe('deriveHud', () => {
 
   it('shows only credits and status on the table', () => {
     const v = deriveHud({ state: { ...base, mode: 'table' }, yearsKnown: true });
-    expect(v.showTimeButton || v.showYear || v.showPortalButton).toBe(false);
+    expect(v.showBar || v.showNavButtons || v.showCredits).toBe(false); // the table rim carries the credit
     expect(v.noEarlierImagery).toBe(false);
   });
 
-  it('shows button and year in street and portal modes', () => {
+  it('shows the street bar and the credit line in street and portal modes', () => {
     for (const mode of ['street', 'portal'] as const) {
       const v = deriveHud({ state: { ...base, mode }, yearsKnown: true });
-      expect(v.showTimeButton && v.showYear && v.showPortalButton).toBe(true);
+      expect(v.showBar && v.showCredits).toBe(true);
     }
   });
 
@@ -85,9 +85,9 @@ describe('deriveHud', () => {
     expect(deriveHud({ state: { ...base, pano: null }, yearsKnown: false }).yearText).toBe('----');
   });
 
-  it('portal button toggles between portal and street', () => {
-    expect(deriveHud({ state: base, yearsKnown: true }).portalTarget).toBe('portal');
-    expect(deriveHud({ state: { ...base, mode: 'portal' }, yearsKnown: true }).portalTarget).toBe('street');
+  it('hides MAP and PORTAL in portal mode, where the window has its own buttons', () => {
+    expect(deriveHud({ state: base, yearsKnown: true }).showNavButtons).toBe(true);
+    expect(deriveHud({ state: { ...base, mode: 'portal' }, yearsKnown: true }).showNavButtons).toBe(false);
   });
 });
 
@@ -177,9 +177,9 @@ describe('placement', () => {
     expect(out.y).toBeLessThan(1.6);
   });
 
-  it('places the time button to the left of forward, whatever the heading', () => {
+  it('places the places list to the left of forward, whatever the heading', () => {
     const out = { x: 0, y: 0, z: 0 };
-    slotPosition({ x: 0, y: 1.6, z: 0 }, 0, SLOTS.time, out);
+    slotPosition({ x: 0, y: 1.6, z: 0 }, 0, SLOTS.places, out);
     expect(out.x).toBeLessThan(0); // left of -Z is -X
     const yaw = yawFromForward(-1, 0); // facing -X
     expect(yaw).toBeCloseTo(Math.PI / 2);
@@ -271,21 +271,27 @@ describe('places list', () => {
     expect(placesTitle(15, false, 3)).toBe('NEARBY, WITH PAST IMAGERY');
   });
 
-  it('shows the list in the room and in street; MAP only in street and portal', async () => {
-    const { showMapButton, showPlacesPanel } = await import('./hud-logic.js');
+  it('shows the list in the room and in street', async () => {
+    const { showPlacesPanel } = await import('./hud-logic.js');
     expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, true]);
     expect(showPlacesPanel('table', 0)).toBe(false);
     expect(showPlacesPanel('table', 0, true)).toBe(true);
     expect(showPlacesPanel('street', 0, true)).toBe(true);
     expect(showPlacesPanel('portal', 3)).toBe(false);
-    expect([showMapButton('table'), showMapButton('street'), showMapButton('portal')]).toEqual([false, true, true]);
+  });
+
+  it('folds rare panels to their header, and hides the pager on a single page', async () => {
+    const { startsCollapsed, showPager } = await import('./hud-logic.js');
+    expect([startsCollapsed('places', 'table'), startsCollapsed('places', 'street')]).toEqual([false, true]);
+    expect([startsCollapsed('search', 'table'), startsCollapsed('settings', 'street')]).toEqual([true, true]);
+    expect([showPager(1), showPager(2)]).toEqual([false, true]);
   });
 
   it('moves the places slot out of the button band only in street', async () => {
     const { SLOTS, STREET_PLACES_SLOT, slotSpec } = await import('./hud-logic.js');
     expect(slotSpec('places', 'table')).toBe(SLOTS.places);
     expect(slotSpec('places', 'street')).toBe(STREET_PLACES_SLOT);
-    expect(slotSpec('time', 'street')).toBe(SLOTS.time);
+    expect(slotSpec('bar', 'street')).toBe(SLOTS.bar);
   });
 
   it('drops places that would show NaN', async () => {

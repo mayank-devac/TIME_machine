@@ -10,7 +10,9 @@ import {
 } from '@iwsdk/core';
 import type { Entity, Object3D, World } from '@iwsdk/core';
 import type { Pano } from '../contracts.js';
-import { PanoSphereTag } from '../track-components.js';
+import { setHoverTint } from '../hover.js';
+import { currentTokens, hexNumber, onThemeChange } from '../theme.js';
+import { HoverFx, PanoSphereTag } from '../track-components.js';
 import { dirOfBearing } from './pano-math.js';
 
 /** At most this many arrows; a pool, so hops never create or free entities. */
@@ -22,9 +24,6 @@ const ARROW_DISTANCE_M = 1.6;
 /** Arrows lie just above the floor (local-floor y = 0 in XR, y = 0 on desktop). */
 const ARROW_FLOOR_Y = 0.02;
 
-const IDLE = 0xffffff;
-const HOVER = 0x7fd6ff;
-
 interface ArrowSlot {
   entity: Entity;
   group: Group;
@@ -32,7 +31,6 @@ interface ArrowSlot {
   discMat: MeshBasicMaterial;
   target: Pano | null;
   bearing: number;
-  hovered: boolean;
 }
 
 function chevronShape(): Shape {
@@ -51,12 +49,15 @@ function chevronShape(): Shape {
 /**
  * Floor markers toward neighbouring panoramas. Selectable with the ray input
  * (`RayInteractable`, controller ray or desktop mouse). Picking one calls `onPick`.
+ * Hover is the shared `world` variant (`HoverFx`): the marker grows and its chevron takes
+ * the `hover` colour.
  */
 export class HopArrows {
   readonly container: Group;
   private readonly containerEntity: Entity;
   private readonly slots: ArrowSlot[] = [];
   private shown = false;
+  private readonly offTheme: () => void;
 
   constructor(
     world: World,
@@ -81,14 +82,13 @@ export class HopArrows {
       const group = new Group();
       group.name = `PanoHopArrow${i}`;
       const discMat = new MeshBasicMaterial({
-        color: 0x000000,
+        color: hexNumber(currentTokens().background),
         transparent: true,
         opacity: 0.35,
         depthWrite: false,
         side: DoubleSide,
       });
       const chevronMat = new MeshBasicMaterial({
-        color: IDLE,
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
@@ -106,31 +106,20 @@ export class HopArrows {
       });
       entity.addComponent(PanoSphereTag, { slot: 'arrow', value: i });
       entity.addComponent(RayInteractable);
-      const slot: ArrowSlot = {
-        entity,
-        group,
-        chevronMat,
-        discMat,
-        target: null,
-        bearing: 0,
-        hovered: false,
-      };
+      entity.addComponent(HoverFx, { slot: 'world' });
+      setHoverTint(group, [chevronMat], 'textPrimary');
+      const slot: ArrowSlot = { entity, group, chevronMat, discMat, target: null, bearing: 0 };
       const obj = group as Object3D & {
         addEventListener(type: string, fn: (e: unknown) => void): void;
       };
-      obj.addEventListener('pointerenter', () => this.setHover(slot, true));
-      obj.addEventListener('pointerleave', () => this.setHover(slot, false));
       obj.addEventListener('click', () => {
         if (this.shown && slot.group.visible && slot.target) this.onPick(slot.target);
       });
       this.slots.push(slot);
     }
-  }
-
-  private setHover(slot: ArrowSlot, on: boolean): void {
-    slot.hovered = on;
-    slot.chevronMat.color.setHex(on ? HOVER : IDLE);
-    slot.discMat.opacity = on ? 0.55 : 0.35;
+    this.offTheme = onThemeChange((t) => {
+      for (const slot of this.slots) slot.discMat.color.setHex(hexNumber(t.background));
+    });
   }
 
   /** Point the pool at a new set of targets (nearest first, already de-duplicated). */
@@ -140,7 +129,6 @@ export class HopArrows {
       slot.target = t?.target ?? null;
       slot.bearing = t?.bearing ?? 0;
       slot.group.visible = !!t;
-      if (slot.hovered) this.setHover(slot, false);
       if (!t) return;
       const d = dirOfBearing(t.bearing);
       slot.group.position.set(d.x * ARROW_DISTANCE_M, 0, d.z * ARROW_DISTANCE_M);
@@ -177,6 +165,7 @@ export class HopArrows {
   }
 
   dispose(): void {
+    this.offTheme();
     for (const slot of this.slots) slot.entity.dispose();
     this.containerEntity.dispose();
   }

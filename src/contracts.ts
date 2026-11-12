@@ -97,6 +97,22 @@ export interface AppState {
   year: number | null;
 }
 
+/** The three switches on the settings panel. Owned by `PrefsStore` (`src/prefs.ts`). */
+export interface Prefs {
+  /** Satellite imagery on the table map. Off shows the map that matches `theme`. */
+  satellite: boolean;
+  /** Colours of every UI surface, and the non-satellite base map. */
+  theme: 'dark' | 'light';
+  /** Tilted table map with extruded buildings. */
+  buildings3d: boolean;
+}
+
+/** Read and change the settings. Changing one emits `prefs:changed`. */
+export interface PrefsAccess {
+  get(): Readonly<Prefs>;
+  set(patch: Partial<Prefs>): void;
+}
+
 export function initialAppState(): AppState {
   return { mode: 'table', spot: null, pano: null, years: [], timeOn: false, year: null };
 }
@@ -120,6 +136,8 @@ export function initialAppState(): AppState {
  *  archive:visible    Track F with the photos now on screen (empty array when hidden).
  *  mode:requested     Anyone (Track G buttons, Track E frame). The orchestrator's flow decides.
  *  mode:changed       Orchestrator flow only.
+ *  prefs:changed      `PrefsStore` only, after a settings switch changed (already saved, theme
+ *                     already applied). Track D follows it for the base map and 3D buildings.
  *  loading            Anyone doing slow work; Track G shows a spinner while any scope is busy.
  *  error              Anyone; Track G shows a toast. `recoverable` false means a hard stop.
  */
@@ -136,6 +154,7 @@ export interface EventMap {
   'archive:visible': { photos: ArchivePhoto[] };
   'mode:requested': { mode: Mode };
   'mode:changed': { mode: Mode; previous: Mode };
+  'prefs:changed': Prefs;
   loading: { scope: string; busy: boolean };
   error: { source: string; message: string; recoverable: boolean };
 }
@@ -320,6 +339,8 @@ export interface TrackContext {
   world: World;
   bus: EventBus;
   state: AppStateStore;
+  /** User settings (satellite, theme, 3D buildings). */
+  prefs: PrefsAccess;
   /** Real or mock, depending on what `index.ts` wired. Code against the interface only. */
   services: Services;
 }

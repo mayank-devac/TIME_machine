@@ -7,6 +7,7 @@ import {
   SRGBColorSpace,
   Vector3,
 } from '@iwsdk/core';
+import { currentTokens, hexNumber, onThemeChange } from '../theme.js';
 import { TIME } from './constants.js';
 
 const PX = 256;
@@ -31,6 +32,14 @@ export class DialVisual {
   private readonly face: MeshBasicMaterial;
   private readonly beadMat: MeshBasicMaterial;
   private readonly bead: Mesh;
+  private readonly offTheme: () => void;
+  /** What the face last showed, so a theme change can repaint it. */
+  private shown: { year: number | null; earlier: number | null; later: number | null; archive: boolean } = {
+    year: null,
+    earlier: null,
+    later: null,
+    archive: false,
+  };
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -46,25 +55,39 @@ export class DialVisual {
     this.mesh.renderOrder = 10;
     this.mesh.visible = false;
 
-    this.beadMat = new MeshBasicMaterial({ color: 0xffe9b0, transparent: true, depthWrite: false });
+    this.beadMat = new MeshBasicMaterial({
+      color: hexNumber(currentTokens().warning),
+      transparent: true,
+      depthWrite: false,
+    });
     this.bead = new Mesh(new CircleGeometry(TIME.dialSizeM * 0.035, 16), this.beadMat);
     this.bead.renderOrder = 11;
     this.mesh.add(this.bead);
     this.paint(null, null, null, false);
+    this.offTheme = onThemeChange((t) => {
+      this.beadMat.color.setHex(hexNumber(t.warning));
+      this.paint(this.shown.year, this.shown.earlier, this.shown.later, this.shown.archive);
+    });
   }
 
   /** Repaint the face. Call only when something changed. */
   paint(year: number | null, earlier: number | null, later: number | null, archive: boolean): void {
     const g = this.g;
+    this.shown.year = year;
+    this.shown.earlier = earlier;
+    this.shown.later = later;
+    this.shown.archive = archive;
     if (!g) return;
+    const t = currentTokens();
     const c = PX / 2;
     g.clearRect(0, 0, PX, PX);
     g.beginPath();
     g.arc(c, c, c - 6, 0, Math.PI * 2);
-    g.fillStyle = 'rgba(12, 14, 22, 0.88)';
+    g.fillStyle = t.background;
     g.fill();
     g.lineWidth = 5;
-    g.strokeStyle = archive ? '#8cb3ff' : '#ffd173';
+    // A year with a panorama is "the past" (warning); an archive stop is quieter.
+    g.strokeStyle = archive ? t.textSecondary : t.warning;
     g.stroke();
     g.lineWidth = 3;
     for (let i = 0; i < TICKS; i++) {
@@ -78,11 +101,11 @@ export class DialVisual {
     }
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillStyle = '#ffffff';
+    g.fillStyle = t.textPrimary;
     g.font = '600 62px system-ui, sans-serif';
     g.fillText(year === null ? '----' : String(year), c, c - 4);
     g.font = '500 22px system-ui, sans-serif';
-    g.fillStyle = 'rgba(255, 255, 255, 0.72)';
+    g.fillStyle = t.textSecondary;
     if (earlier !== null) g.fillText(`‹ ${earlier}`, c - 48, c + 50);
     if (later !== null) g.fillText(`${later} ›`, c + 48, c + 50);
     if (archive) g.fillText('archive', c, c - 52);
@@ -115,6 +138,7 @@ export class DialVisual {
   }
 
   dispose(): void {
+    this.offTheme();
     this.mesh.geometry.dispose();
     this.bead.geometry.dispose();
     this.face.dispose();

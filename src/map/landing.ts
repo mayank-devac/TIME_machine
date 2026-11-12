@@ -2,97 +2,87 @@
  * The 2D landing page: an intro card (top left) and a rail of curated places with imagery
  * (bottom) that drifts right to left. Plain DOM, mounted into document.body by the map track
  * and hidden while an immersive session runs or when the app is not in table mode.
- * Styling follows .agents/skills/xr-glass-design (glass, hairlines, violet/mint accents).
+ * Styling follows .agents/skills/xr-glass-design; colours come from `src/theme.ts`.
+ * Map style and 3D buildings are chosen on the HUD's settings panel, not here.
  */
 import type { CuratedSpot } from '../contracts.js';
+import { cssVars, currentTokens } from '../theme.js';
+import type { Tokens } from '../theme.js';
 import { createDebouncedSearch, searchPlaces, type DebouncedSearch, type PlaceResult } from './photon.js';
-
-export const LANDING_CREDIT =
-  'Map data © OpenStreetMap contributors · Map tiles by OpenFreeMap · Street imagery and coverage © Mapillary and its contributors';
 
 export interface LandingCallbacks {
   /** Show this place on the table map. */
   onPreview(place: PlaceResult): void;
   /** Go straight into the street view here. */
   onEnter(place: PlaceResult): void;
-  /** Optional: base-map choice shown as a segmented control. */
-  views?: {
-    options: ReadonlyArray<{ id: string; label: string }>;
-    current: string;
-    onChange(id: string): void;
-  };
-  /** Optional: 3D buildings switch (tilted map with extruded buildings). */
-  buildings3d?: {
-    current: boolean;
-    onChange(on: boolean): void;
-  };
 }
 
 // Street-view glyph: a person standing inside a 360 ring. Decorative; the button carries the label.
 const STREET_VIEW_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="2.2"/><path d="M12 10.5v5M9 12.5l3-2 3 2M10 20l2-4.5 2 4.5"/><path d="M4 17c-1 .8-1.5 1.6-1.5 2.5C2.5 21.4 6.8 23 12 23s9.5-1.6 9.5-3.5c0-.9-.5-1.7-1.5-2.5" stroke-width="1.4"/></svg>';
 
+/**
+ * Every colour below is a `--tm-*` custom property written from the theme tokens (see
+ * `cssVars` in `src/theme.ts`); translucent shades are mixed from them, never spelled out.
+ */
 const CSS = `
-.tm-landing,.tm-rail{--glass:rgba(15,18,28,.62);--hair:rgba(255,255,255,.22);--soft:rgba(255,255,255,.72);--faint:rgba(255,255,255,.45);
-  --violet:#7c6cff;--mint:#2ee6d6;
-  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff}
+.tm-landing,.tm-rail{
+  --line:color-mix(in srgb,var(--tm-border) 80%,transparent);
+  --wash:color-mix(in srgb,var(--tm-surface) 70%,transparent);
+  --shade:color-mix(in srgb,var(--tm-on-accent) 35%,transparent);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:400;color:var(--tm-text-primary)}
 .tm-landing[hidden],.tm-rail[hidden]{display:none}
 .tm-landing button,.tm-rail button{font:inherit;color:inherit;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
-.tm-landing button:focus-visible,.tm-rail button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.tm-landing button:focus-visible,.tm-rail button:focus-visible{outline:2px solid var(--tm-hover);outline-offset:2px}
 
 /* Intro card */
 .tm-landing{position:fixed;left:20px;top:64px;z-index:1000;width:min(320px,calc(100vw - 40px));box-sizing:border-box;padding:18px;
-  display:flex;flex-direction:column;gap:12px;border-radius:20px;background:var(--glass);border:1px solid var(--hair);
-  box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
+  display:flex;flex-direction:column;gap:12px;border-radius:20px;background:var(--tm-background);border:1px solid var(--line);
+  box-shadow:0 8px 32px var(--shade);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
 .tm-landing .tm-head{display:flex;align-items:center;gap:10px}
 .tm-landing h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:500;letter-spacing:.01em;line-height:1.2}
-.tm-landing .tm-toggle{flex:none;padding:4px 12px;border-radius:999px;border:1px solid var(--hair);background:rgba(255,255,255,.06);color:var(--soft);font-size:12px}
-.tm-landing .tm-toggle:hover{background:rgba(255,255,255,.14);color:#fff}
+.tm-landing .tm-toggle{flex:none;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--wash);color:var(--tm-text-secondary);font-size:12px}
+.tm-landing .tm-toggle:hover{background:var(--tm-hover-fill);border-color:var(--tm-hover);color:var(--tm-text-primary)}
 .tm-landing .tm-body{display:flex;flex-direction:column;gap:10px;min-height:0}
-.tm-landing .tm-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--soft);font-size:13px}
+.tm-landing .tm-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--tm-text-secondary);font-size:13px}
 .tm-landing .tm-steps li{display:flex;gap:10px;align-items:baseline}
-.tm-landing .tm-steps i{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:500;color:#fff;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.6)}
-.tm-landing .tm-steps b{font-weight:500;color:#fff}
-.tm-landing .tm-label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint)}
-.tm-landing .tm-views{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--hair)}
-.tm-landing .tm-views button{flex:1;padding:6px 10px;border:0;border-radius:999px;background:transparent;color:var(--soft);font-size:13px}
-.tm-landing .tm-views button:hover{color:#fff;background:rgba(255,255,255,.08)}
-.tm-landing .tm-views button[aria-pressed=true]{background:rgba(124,108,255,.45);color:#fff}
-.tm-landing .tm-status{color:#7ff5ea;font-size:13px}
+.tm-landing .tm-steps i{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:500;color:var(--tm-on-accent);background:var(--tm-accent)}
+.tm-landing .tm-steps b{font-weight:500;color:var(--tm-text-primary)}
+.tm-landing .tm-status{color:var(--tm-success);font-size:13px}
+.tm-landing .tm-status[data-error]{color:var(--tm-danger)}
 .tm-landing .tm-status:empty{display:none}
-.tm-landing .tm-credit{margin-top:2px}
-.tm-landing .tm-credit{font-size:10.5px;line-height:1.5;color:var(--faint)}
+.tm-landing .tm-credit{margin-top:2px;font-size:10.5px;line-height:1.5;color:var(--tm-text-secondary)}
 
 /* Search */
 .tm-landing .tm-search{display:flex;flex-direction:column;gap:6px}
-.tm-landing .tm-search input{width:100%;box-sizing:border-box;padding:9px 14px;border-radius:999px;border:1px solid var(--hair);background:rgba(255,255,255,.06);color:#fff;font:inherit;font-size:13px}
-.tm-landing .tm-search input::placeholder{color:var(--faint)}
-.tm-landing .tm-search input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.tm-landing .tm-search input{width:100%;box-sizing:border-box;padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:var(--wash);color:var(--tm-text-primary);font:inherit;font-size:13px}
+.tm-landing .tm-search input::placeholder{color:var(--tm-text-secondary)}
+.tm-landing .tm-search input:focus-visible{outline:2px solid var(--tm-hover);outline-offset:2px}
 .tm-landing .tm-results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto}
 .tm-landing .tm-results:empty{display:none}
 .tm-landing .tm-results li{display:flex;align-items:center;gap:4px}
-.tm-landing .tm-results .tm-hit{flex:1;min-width:0;padding:7px 10px;border:0;border-radius:12px;background:transparent;text-align:left;font-size:13px;color:var(--soft)}
-.tm-landing .tm-results .tm-hit:hover{background:rgba(255,255,255,.1);color:#fff}
-.tm-landing .tm-results .tm-go{flex:none;width:30px;height:30px;padding:0;display:grid;place-items:center;border-radius:50%;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.65)}
-.tm-landing .tm-results .tm-go:hover{background:rgba(124,108,255,.7)}
+.tm-landing .tm-results .tm-hit{flex:1;min-width:0;padding:7px 10px;border:0;border-radius:12px;background:transparent;text-align:left;font-size:13px;color:var(--tm-text-secondary)}
+.tm-landing .tm-results .tm-hit:hover{background:var(--tm-hover-fill);color:var(--tm-text-primary)}
+.tm-landing .tm-results .tm-go{flex:none;width:30px;height:30px;padding:0;display:grid;place-items:center;border-radius:50%;color:var(--tm-on-accent);background:var(--tm-accent);border:1px solid var(--tm-accent)}
+.tm-landing .tm-results .tm-go:hover{border-color:var(--tm-hover);transform:scale(1.06)}
 .tm-landing .tm-results .tm-go svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
 /* Curated rail: one line, drifting right to left; pauses on hover or keyboard focus */
 .tm-rail{position:fixed;left:0;right:0;bottom:20px;z-index:1000;overflow:hidden;padding:4px 0;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 72px,#000 calc(100% - 72px),transparent);
-  mask-image:linear-gradient(90deg,transparent,#000 72px,#000 calc(100% - 72px),transparent)}
+  -webkit-mask-image:linear-gradient(90deg,transparent,black 72px,black calc(100% - 72px),transparent);
+  mask-image:linear-gradient(90deg,transparent,black 72px,black calc(100% - 72px),transparent)}
 .tm-rail .tm-track{list-style:none;margin:0;padding:0;display:flex;width:max-content;animation:tm-scroll var(--tm-dur,40s) linear infinite}
 .tm-rail:hover .tm-track,.tm-rail:focus-within .tm-track{animation-play-state:paused}
 .tm-rail .tm-card{flex:none;display:flex;align-items:center;gap:4px;margin-right:12px;padding:6px 6px 6px 4px;border-radius:20px;
-  background:var(--glass);border:1px solid var(--hair);box-shadow:0 6px 24px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.1);
+  background:var(--tm-background);border:1px solid var(--line);box-shadow:0 6px 24px var(--shade);
   backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4)}
 .tm-rail .tm-place{display:flex;flex-direction:column;gap:1px;min-width:0;padding:4px 14px 4px 14px;border:0;border-radius:16px;background:transparent;text-align:left;white-space:nowrap}
-.tm-rail .tm-place:hover{background:rgba(255,255,255,.08)}
+.tm-rail .tm-place:hover{background:var(--tm-hover-fill)}
 .tm-rail .tm-name{font-size:14px;font-weight:500;line-height:1.25}
-.tm-rail .tm-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--soft);line-height:1.25}
-.tm-rail .tm-years{padding:0 7px;border-radius:999px;font-size:11px;color:#7ff5ea;background:rgba(46,230,214,.12);border:1px solid rgba(46,230,214,.3)}
-.tm-rail .tm-icon{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;background:rgba(124,108,255,.35);border:1px solid rgba(124,108,255,.65)}
-.tm-rail .tm-icon:hover{background:rgba(124,108,255,.7);transform:scale(1.06)}
+.tm-rail .tm-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tm-text-secondary);line-height:1.25}
+.tm-rail .tm-years{padding:0 7px;border-radius:999px;font-size:11px;color:var(--tm-warning);border:1px solid color-mix(in srgb,var(--tm-warning) 45%,transparent)}
+.tm-rail .tm-icon{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;color:var(--tm-on-accent);background:var(--tm-accent);border:1px solid var(--tm-accent)}
+.tm-rail .tm-icon:hover{border-color:var(--tm-hover);transform:scale(1.06)}
 .tm-rail .tm-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 @keyframes tm-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){
@@ -114,6 +104,7 @@ export class LandingPage {
   private readonly rail: HTMLElement;
   private readonly status: HTMLElement;
   private readonly body: HTMLElement;
+  private readonly credit: HTMLElement;
   private readonly search: DebouncedSearch;
   private collapsed = false;
 
@@ -144,13 +135,8 @@ export class LandingPage {
           <li><i>2</i><span>Press <b>Enter XR</b> to stand at the map table.</span></li>
           <li><i>3</i><span>Tap a glowing street to step into it.</span></li>
         </ol>
-        <div class="tm-views-wrap" style="display:flex;flex-direction:column;gap:6px">
-          <div class="tm-label">Map</div>
-          <div class="tm-views" role="group" aria-label="Map view"></div>
-          <div class="tm-views tm-3d" role="group" aria-label="Buildings"></div>
-        </div>
         <div class="tm-status" role="status" aria-live="polite"></div>
-        <div class="tm-credit">${LANDING_CREDIT}</div>
+        <div class="tm-credit"></div>
       </div>`;
     this.element = root;
     this.rail = document.createElement('nav');
@@ -161,6 +147,7 @@ export class LandingPage {
     this.rail.appendChild(this.curated);
     this.status = root.querySelector('.tm-status')!;
     this.body = root.querySelector('.tm-body')!;
+    this.credit = root.querySelector('.tm-credit')!;
     const toggle = root.querySelector<HTMLButtonElement>('.tm-toggle')!;
 
     toggle.addEventListener('click', () => {
@@ -199,43 +186,7 @@ export class LandingPage {
       this.search.flush();
     });
 
-    const views = this.cb.views;
-    const viewsEl = root.querySelector<HTMLElement>('.tm-views')!;
-    if (views) {
-      for (const o of views.options) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = o.label;
-        b.setAttribute('aria-pressed', String(o.id === views.current));
-        b.addEventListener('click', () => {
-          viewsEl.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-          views.onChange(o.id);
-        });
-        viewsEl.appendChild(b);
-      }
-    } else {
-      root.querySelector('.tm-views-wrap')!.remove();
-    }
-    const b3d = this.cb.buildings3d;
-    const b3dEl = root.querySelector<HTMLElement>('.tm-3d');
-    if (b3dEl) {
-      if (!b3d) {
-        b3dEl.remove();
-      } else {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = '3D buildings';
-        btn.title = 'Tilt the table map and raise buildings off the ground';
-        btn.setAttribute('aria-pressed', String(b3d.current));
-        btn.addEventListener('click', () => {
-          const on = btn.getAttribute('aria-pressed') !== 'true';
-          btn.setAttribute('aria-pressed', String(on));
-          b3d.onChange(on);
-        });
-        b3dEl.appendChild(btn);
-      }
-    }
-
+    this.setTheme(currentTokens());
     this.setSpots(spots);
     document.body.append(root, this.rail);
   }
@@ -253,6 +204,18 @@ export class LandingPage {
     this.curated.style.setProperty('--tm-dur', `${Math.max(24, spots.length * 5)}s`);
   }
 
+  /** Recolour the card and the rail from a theme. */
+  setTheme(t: Readonly<Tokens>): void {
+    const vars = cssVars(t);
+    this.element.setAttribute('style', vars);
+    this.rail.setAttribute('style', vars);
+  }
+
+  /** The attribution line: who supplies the map now showing, plus the street imagery. */
+  setCredit(mapCredit: string): void {
+    this.credit.textContent = `${mapCredit}  ·  Street imagery © Mapillary and its contributors`;
+  }
+
   setVisible(visible: boolean): void {
     this.element.hidden = !visible;
     this.rail.hidden = !visible;
@@ -267,7 +230,7 @@ export class LandingPage {
 
   private setStatus(text: string, error = false): void {
     this.status.textContent = text;
-    this.status.style.color = error ? '#ff8a8a' : '';
+    this.status.toggleAttribute('data-error', error);
   }
 
   /** One search result: the label shows it on the table, the round button enters the street. */

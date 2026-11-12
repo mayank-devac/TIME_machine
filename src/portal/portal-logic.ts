@@ -100,6 +100,34 @@ export class CrossingDetector {
   }
 }
 
+/**
+ * Corner-handle resize. The handle started `startDistance` metres from the window centre
+ * when the window was at `startScale`; it is now `distance` metres away. The window scales by
+ * the same ratio, clamped to [min, max]. A degenerate start keeps the scale.
+ */
+export function resizeScale(
+  startScale: number,
+  startDistance: number,
+  distance: number,
+  min: number,
+  max: number,
+): number {
+  if (!(startDistance > 1e-4) || !Number.isFinite(distance)) return Math.min(max, Math.max(min, startScale));
+  return Math.min(max, Math.max(min, (startScale * distance) / startDistance));
+}
+
+/** A press on the glass counts as a tap (step in) only if it was short and the window stayed put. */
+export const GLASS_TAP_MAX_MS = 400;
+export const GLASS_TAP_MAX_MOVE_M = 0.02;
+
+/**
+ * Pressing the glass either steps into the street (a tap) or drags the window (a hold and
+ * move). `movedM` is how far the window travelled during the press, `heldMs` how long it lasted.
+ */
+export function isGlassTap(movedM: number, heldMs: number): boolean {
+  return movedM <= GLASS_TAP_MAX_MOVE_M && heldMs <= GLASS_TAP_MAX_MS;
+}
+
 export interface Placement {
   position: Vec3Like;
   /** Rotation about +Y, radians. At 0 the window's room-side normal points along +Z. */

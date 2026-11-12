@@ -12,7 +12,7 @@ import type { LatLng } from '../contracts.js';
 export const TILE_PX = 512;
 const MAX_LAT = 85.0511287798;
 
-/** Zoom range the table allows. Below 12 a 0.9 m table shows too many tiles (quota); above 18 nothing new appears. */
+/** Zoom range the table allows. Below 12 the table shows too many tiles (quota); above 18 nothing new appears. */
 export const MIN_ZOOM = 12;
 export const MAX_ZOOM = 18;
 
@@ -157,11 +157,63 @@ export function nearestOnPolylines(px: number, py: number, lines: Pixel[][], max
   return best;
 }
 
+/** How far a pointer may wander on the table during a press and still count as a tap, metres. */
+export const TAP_TRAVEL_M = 0.017;
+
 /**
  * Tells a click (a pick) from a drag. `travelPx` is the total pointer travel in canvas
- * pixels since the press.
+ * pixels since the press; `tableSizeM` is the table's edge length, so the threshold is a
+ * real distance on the table (generous for a noisy hand ray) whatever the table size.
  */
-export function isTap(travelPx: number, durationMs: number, canvasPx: number): boolean {
-  // 1 % of the canvas is about 9 mm on a 0.9 m table: generous for a noisy hand ray.
-  return travelPx <= canvasPx * 0.01 && durationMs <= 700;
+export function isTap(travelPx: number, durationMs: number, canvasPx: number, tableSizeM: number): boolean {
+  return travelPx <= (TAP_TRAVEL_M / tableSizeM) * canvasPx && durationMs <= 700;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Smooth zoom. Every input sets a target; the table eases toward it.
+// ---------------------------------------------------------------------------------------------
+
+/** Time constant of the zoom ease, ms. About 95 % of the way there after three of these. */
+export const ZOOM_EASE_MS = 90;
+/** Closer than this to the target, the zoom snaps to it and the easing stops. */
+export const ZOOM_SNAP = 0.002;
+
+/**
+ * One easing step toward `target` after `dtMs`. Exponential, so it is frame-rate independent,
+ * never overshoots, and stays inside the clamp because both ends are clamped.
+ */
+export function stepZoom(current: number, target: number, dtMs: number, tauMs = ZOOM_EASE_MS): number {
+  const goal = clampZoom(target);
+  if (dtMs <= 0) return current;
+  if (Math.abs(goal - current) <= ZOOM_SNAP) return goal;
+  const next = current + (goal - current) * (1 - Math.exp(-dtMs / tauMs));
+  return Math.abs(goal - next) <= ZOOM_SNAP ? goal : next;
+}
+
+/** Thumbstick deflection ignored below this (stick noise, and room for sideways flicks). */
+export const STICK_DEADZONE = 0.25;
+/** Zoom levels per second at full thumbstick deflection. */
+export const STICK_ZOOM_PER_S = 1.5;
+
+/**
+ * Thumbstick to zoom speed, levels per second. `axisY` is the gamepad axis: pushing the stick
+ * away from you is negative and zooms IN. The deadzone is rescaled so speed starts from zero
+ * at its edge instead of jumping.
+ */
+export function stickZoomRate(axisY: number): number {
+  const mag = Math.abs(axisY);
+  if (!(mag > STICK_DEADZONE)) return 0; // also rejects NaN
+  const scaled = Math.min(1, (mag - STICK_DEADZONE) / (1 - STICK_DEADZONE));
+  return -Math.sign(axisY) * scaled * STICK_ZOOM_PER_S;
+}
+
+/** Zoom rail: position along the rail, 0 (near end) to 1 (far end), to a zoom level. */
+export function railToZoom(t: number): number {
+  const k = Math.min(1, Math.max(0, t));
+  return MIN_ZOOM + k * (MAX_ZOOM - MIN_ZOOM);
+}
+
+/** Zoom level to the knob's position along the rail, 0 to 1. */
+export function zoomToRail(zoom: number): number {
+  return (clampZoom(zoom) - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
 }

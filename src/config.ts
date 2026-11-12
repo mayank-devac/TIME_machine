@@ -26,8 +26,8 @@ export const config = {
   },
 
   lens: {
-    /** Angular radius in radians (about 14 degrees). */
-    defaultRadius: 0.25,
+    /** Angular radius in radians (about 23 degrees). */
+    defaultRadius: 0.4,
     feather: 0.05,
     openRippleMs: 700,
     pushThroughMs: 1600,
@@ -43,8 +43,12 @@ export const config = {
   },
 
   portal: {
-    windowWidthM: 1.0,
-    windowHeightM: 1.2,
+    /** Size of the opening at scale 1. Big enough to step through without ducking. UNTESTED on device. */
+    windowWidthM: 1.4,
+    windowHeightM: 1.7,
+    /** Limits of the corner resize handle (uniform scale of the whole window). */
+    minScale: 0.6,
+    maxScale: 1.6,
     stencilRef: 1,
   },
 

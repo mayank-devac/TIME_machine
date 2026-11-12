@@ -51,17 +51,20 @@ export interface HudInputs {
 }
 
 export interface HudView {
-  showTimeButton: boolean;
+  /** The street bar (year, chips, buttons) shows in street and in portal mode. */
+  showBar: boolean;
   timeButtonEnabled: boolean;
   timeButtonLabel: string;
-  showYear: boolean;
   yearText: string;
-  /** Lens is on: the year label gets the "past" tint. */
+  /** Lens is on: the year pill gets the "past" tint. */
   yearIsPast: boolean;
-  showPortalButton: boolean;
-  portalButtonLabel: string;
-  /** Mode the portal button asks for when pressed. */
-  portalTarget: Mode;
+  /**
+   * MAP and PORTAL on the street bar. Hidden in portal mode: the window carries its own
+   * STEP IN and MAP buttons there, and two controls must not do one job.
+   */
+  showNavButtons: boolean;
+  /** The HUD credit line. Hidden in the room, where the table rim carries the credit. */
+  showCredits: boolean;
   noEarlierImagery: boolean;
 }
 
@@ -77,22 +80,20 @@ export function deriveHud({ state, yearsKnown }: HudInputs): HudView {
   const lensOn = state.timeOn && enabled;
   const shown = lensOn && state.year !== null ? state.year : presentYear;
   return {
-    showTimeButton: inScene,
+    showBar: inScene,
     timeButtonEnabled: enabled,
     timeButtonLabel: lensOn ? 'BACK TO NOW' : 'TIME MACHINE',
-    showYear: inScene,
     yearText: shown === null ? '----' : String(shown),
     yearIsPast: lensOn && state.year !== null,
-    showPortalButton: inScene,
-    portalButtonLabel: state.mode === 'portal' ? 'BACK' : 'PORTAL',
-    portalTarget: state.mode === 'portal' ? 'street' : 'portal',
+    showNavButtons: state.mode === 'street',
+    showCredits: inScene,
     noEarlierImagery:
       inScene && yearsKnown && state.pano !== null && !canUseTimeMachine(state.years, true),
   };
 }
 
 // ---------------------------------------------------------------------------------------------
-// Year list (the small panel under the TIME MACHINE button)
+// Year list (the chips under the year on the street bar)
 // ---------------------------------------------------------------------------------------------
 
 export const MAX_YEAR_CHIPS = 8;
@@ -174,7 +175,15 @@ export function usablePlaces<T extends LatLng & { years: readonly number[] }>(
     (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.years.some((y) => Number.isFinite(y)) && !tooClose(p),
   );
 }
-export const showMapButton = (mode: Mode): boolean => mode === 'street' || mode === 'portal';
+
+/** Whether a collapsible panel starts folded to its header in a mode. Search and settings are
+ * rare; the places list is secondary once the player stands in a street. */
+export function startsCollapsed(panel: 'places' | 'search' | 'settings', mode: Mode): boolean {
+  return panel === 'places' ? mode !== 'table' : true;
+}
+
+/** PREV and NEXT are only worth showing when there is somewhere to go. */
+export const showPager = (pageCount: number): boolean => pageCount > 1;
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 
@@ -340,16 +349,7 @@ export class ToastQueue {
 // Placement (pure maths; entry.ts applies it to the panels)
 // ---------------------------------------------------------------------------------------------
 
-export type HudSlot =
-  | 'time'
-  | 'year'
-  | 'credits'
-  | 'status'
-  | 'portal'
-  | 'info'
-  | 'places'
-  | 'search'
-  | 'map';
+export type HudSlot = 'bar' | 'places' | 'search' | 'settings' | 'credits' | 'status';
 
 export interface SlotSpec {
   /** Degrees to the left of the user's forward direction (negative is right). */
@@ -360,29 +360,30 @@ export interface SlotSpec {
   dy: number;
 }
 
+/**
+ * Where each panel opens. The centre of the view stays clear for the map table and the
+ * street; the core controls (street bar) sit just below it, lists to the sides, and the rare
+ * settings panel furthest out. Every panel except the status toast can be dragged from here.
+ */
 export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
-  credits: { leftDeg: 0, distance: 1.5, dy: -0.66 },
-  info: { leftDeg: 0, distance: 1.5, dy: -0.78 },
-  status: { leftDeg: 0, distance: 1.5, dy: -0.5 },
-  time: { leftDeg: 32, distance: 1.4, dy: -0.2 },
-  year: { leftDeg: -32, distance: 1.4, dy: -0.05 },
-  portal: { leftDeg: -32, distance: 1.4, dy: -0.4 },
+  status: { leftDeg: 0, distance: 1.5, dy: -0.2 },
+  // Year, chips and MAP / TIME MACHINE / PORTAL: below the eye line, above the floor arrows.
+  bar: { leftDeg: 0, distance: 1.3, dy: -0.47 },
+  credits: { leftDeg: 0, distance: 1.5, dy: -0.92 },
   // Places list: beside the table in the room (see STREET_PLACES_SLOT when a pano is live).
-  places: { leftDeg: 42, distance: 1.3, dy: -0.1 },
+  places: { leftDeg: 42, distance: 1.3, dy: -0.05 },
   // Search (type or speak a place), beside the table on the right. Table mode only.
-  search: { leftDeg: -30, distance: 1.5, dy: -0.12 },
-  // Same spot as the PORTAL button's neighbour: just below it.
-  map: { leftDeg: -32, distance: 1.4, dy: -0.55 },
+  search: { leftDeg: -38, distance: 1.4, dy: -0.05 },
+  settings: { leftDeg: -66, distance: 1.3, dy: -0.1 },
 };
 
-/** Street raises the places panel above the button band: the time, portal and map buttons share
- * the lower sides of the view, and the panel is wide enough to swallow the time button otherwise. */
-export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 52, distance: 1.5, dy: 0.22 };
+/** Street moves the places panel further out and up to the eye line, clear of the street bar. */
+export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 52, distance: 1.5, dy: 0 };
 
 /** Street omits places that are basically the spot the player already stands on. */
 export const STREET_PLACE_MIN_OFFSET_M = 15;
 
-/** Where a HUD slot sits in a given mode. Only `places` moves; street needs the raised spot. */
+/** Where a HUD slot sits in a given mode. Only `places` moves; street needs the outer spot. */
 export function slotSpec(slot: HudSlot, mode: Mode): SlotSpec {
   return slot === 'places' && mode === 'street' ? STREET_PLACES_SLOT : SLOTS[slot];
 }

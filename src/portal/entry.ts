@@ -1,9 +1,11 @@
 import { DistanceGrabbable, MovementMode, RayInteractable, Vector3 } from '@iwsdk/core';
 import type { Entity, Object3D } from '@iwsdk/core';
+import { config } from '../config.js';
 import type { Portal, Track, TrackContext, TrackFactory } from '../contracts.js';
-import { PortalFrameTag } from '../track-components.js';
+import { stopBubbling } from '../drag.js';
+import { HoverFx, PortalFrameTag } from '../track-components.js';
 import { PORTAL_DEV_DEMO, runDevDemo } from './dev-demo.js';
-import { readHead } from './head.js';
+import { readHead } from '../head.js';
 import { PortalFlow } from './portal-flow.js';
 import { placeInFrontOfHead } from './portal-logic.js';
 import type { Placement } from './portal-logic.js';
@@ -11,24 +13,20 @@ import { PortalSystem } from './portal-system.js';
 import { PortalWindow, SLOT } from './portal-window.js';
 
 /** How far in front of the head the window opens, and how far below eye level its centre sits. */
-const OPEN_DISTANCE_M = 1.3;
-const OPEN_DROP_M = 0.15;
+const OPEN_DISTANCE_M = 1.6;
+const OPEN_DROP_M = 0.2;
 
 export interface PortalTrack extends Track, Portal {
   readonly flow: PortalFlow;
 }
 
-/** Stops a click on a child (glass, button) from bubbling up and starting a frame grab. */
-function stopBubbling(obj: Object3D): void {
-  (obj as unknown as { addEventListener(t: string, f: (e: { stopPropagation(): void }) => void): void })
-    .addEventListener('pointerdown', (e) => e.stopPropagation());
-}
-
 /**
  * Track E: the passthrough portal. In `portal` mode a framed window stands in the room; the
- * stage sphere is drawn only through it (stencil). Grab the frame (ray + trigger) to move
- * it. Step through it, push a hand through it, or press STEP IN / the glass to enter the
- * street. BACK TO ROOM returns to the table.
+ * stage sphere is drawn only through it (stencil).
+ *  - Move it: press and drag the frame or the glass (ray + trigger, or a hand pinch).
+ *  - Resize it: drag the block on its bottom-right corner (clamped by `config.portal`).
+ *  - Enter the street: step through it, push a hand through it, tap the glass, or press
+ *    STEP IN. MAP returns to the room and its table.
  */
 export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
   const { world, bus, state, services } = ctx;
@@ -44,16 +42,35 @@ export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
     translate: true,
   });
   const children: Entity[] = [];
-  const child = (obj: Object3D, slot: string): void => {
+  const child = (obj: Object3D, slot: string): Entity => {
     const e = world.createTransformEntity(obj, { parent: frameEntity, persistent: true });
     e.addComponent(PortalFrameTag, { slot });
     e.addComponent(RayInteractable);
-    stopBubbling(obj);
     children.push(e);
+    return e;
   };
+  // The glass lets its press bubble to the frame, so dragging the glass moves the window; a
+  // short still press is a tap and steps in (decided in PortalSystem).
   child(win.mask, SLOT.glass);
-  child(win.enterButton, SLOT.enter);
-  child(win.exitButton, SLOT.exit);
+  // Buttons and the handle act on their own: a press on them must not also drag the window.
+  for (const [obj, slot] of [
+    [win.enterButton, SLOT.enter],
+    [win.exitButton, SLOT.exit],
+  ] as const) {
+    child(obj, slot).addComponent(HoverFx, { slot: 'world' });
+    stopBubbling(obj);
+  }
+  // The handle is dragged by the grab system; PortalSystem turns its distance from the
+  // window centre into the window's scale.
+  const handleEntity = child(win.handle, SLOT.resize);
+  handleEntity.addComponent(HoverFx, { slot: 'grip' });
+  handleEntity.addComponent(DistanceGrabbable, {
+    movementMode: MovementMode.MoveFromTarget,
+    rotate: false,
+    scale: false,
+    translate: true,
+  });
+  stopBubbling(win.handle);
 
   const head = new Vector3();
   const forward = new Vector3();
@@ -70,7 +87,12 @@ export const createTrack: TrackFactory = (ctx: TrackContext): PortalTrack => {
     onOpen() {
       placeWindow();
       win.root.visible = true;
-      if (import.meta.env.DEV) console.log(`[portal] open stage.stencilRef=${services.stage.stencilRef}`);
+      if (import.meta.env.DEV) {
+        win.syncPlane();
+        console.log(
+          `[portal] open stage.stencilRef=${services.stage.stencilRef} half=${win.plane.halfWidth.toFixed(2)}x${win.plane.halfHeight.toFixed(2)} scale=${win.scale.toFixed(2)} limits=${config.portal.minScale}-${config.portal.maxScale}`,
+        );
+      }
     },
     onClose() {
       win.root.visible = false;

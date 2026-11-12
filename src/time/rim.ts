@@ -11,6 +11,7 @@ import {
   Vector3,
 } from '@iwsdk/core';
 import { config } from '../config.js';
+import { currentTokens, hexNumber, onThemeChange } from '../theme.js';
 import { TIME } from './constants.js';
 
 /**
@@ -119,17 +120,24 @@ function bandGeometry(segments: number, rows: number): BufferGeometry {
   return geo;
 }
 
-/** Warm gold for a year with a panorama, cool grey-blue for an archive stop. */
-const COLOR_PANO = new Color(1.0, 0.82, 0.45);
-const COLOR_ARCHIVE = new Color(0.55, 0.7, 1.0);
-
 export class LensRim {
   readonly mesh: Mesh;
   private readonly material: ShaderMaterial;
   private readonly center = new Vector3();
   private readonly axis = new Vector3(0, 0, -1);
+  /** `warning` for a year with a panorama (the past), `textSecondary` for an archive stop. */
+  private readonly panoColor = new Color();
+  private readonly archiveColor = new Color();
+  private readonly offTheme: () => void;
 
   constructor() {
+    const applyTheme = (): void => {
+      const t = currentTokens();
+      this.panoColor.setHex(hexNumber(t.warning));
+      this.archiveColor.setHex(hexNumber(t.textSecondary));
+    };
+    applyTheme();
+    this.offTheme = onThemeChange(applyTheme);
     this.material = new ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -148,7 +156,7 @@ export class LensRim {
         uInner: { value: TIME.rimInnerRad },
         uOuter: { value: TIME.rimOuterRad },
         uDistance: { value: config.sphereRadiusM * TIME.rimDistanceFactor },
-        uColor: { value: new Color().copy(COLOR_PANO) },
+        uColor: { value: new Color().copy(this.panoColor) },
         uTime: { value: 0 },
         uOpacity: { value: 0 },
         uRipple: { value: 1 },
@@ -187,7 +195,7 @@ export class LensRim {
     m.uniforms.uOpacity.value = archive ? opacity * 0.6 : opacity;
     m.uniforms.uRipple.value = ripple;
     m.uniforms.uTime.value = timeSec;
-    (m.uniforms.uColor.value as Color).copy(archive ? COLOR_ARCHIVE : COLOR_PANO);
+    (m.uniforms.uColor.value as Color).copy(archive ? this.archiveColor : this.panoColor);
     // In portal mode the stage draws only inside the window's stencil; so must the rim.
     if (stencilRef === null) {
       m.stencilWrite = false;
@@ -200,6 +208,7 @@ export class LensRim {
   }
 
   dispose(): void {
+    this.offTheme();
     this.mesh.geometry.dispose();
     this.material.dispose();
   }

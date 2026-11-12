@@ -9,15 +9,12 @@ const uikitml = (fileName: string, name: string) => ({
   name,
 });
 
-// Track G owns the files in public/ui/. The ids below are fixed in Phase 0.
+// Track G owns the files in public/ui/. One id per HUD panel (see `src/ui/README.md`).
 export default defineAssets({
-  'hud-time-button': uikitml('time-button.uikitml', 'Time Machine Button'),
-  'hud-year-label': uikitml('year-label.uikitml', 'Year Label'),
+  'hud-street-bar': uikitml('street-bar.uikitml', 'Street Bar'),
+  'hud-places': uikitml('places.uikitml', 'Places'),
+  'hud-search': uikitml('search.uikitml', 'Search'),
+  'hud-settings': uikitml('settings.uikitml', 'Settings'),
   'hud-credits': uikitml('credits.uikitml', 'Credits'),
   'hud-status': uikitml('status.uikitml', 'Status'),
-  'hud-portal-button': uikitml('portal-button.uikitml', 'Portal Button'),
-  'hud-info-button': uikitml('info-button.uikitml', 'Info Button'),
-  'hud-search': uikitml('search.uikitml', 'Search'),
-  'hud-places': uikitml('places.uikitml', 'Places'),
-  'hud-map-button': uikitml('map-button.uikitml', 'Map Button'),
 });

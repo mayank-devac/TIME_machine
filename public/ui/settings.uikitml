@@ -1,0 +1,112 @@
+<style>
+  .panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+    padding-left: 3;
+    padding-right: 3;
+    padding-top: 3;
+    padding-bottom: 3;
+    border-width: 0.3;
+    border-radius: 4;
+  }
+  .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .title {
+    font-size: 2.8;
+    font-weight: medium;
+    text-align: left;
+  }
+  .fold {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 7;
+    height: 7;
+    border-width: 0.3;
+    border-radius: 3.5;
+    cursor: pointer;
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+  }
+  .btn {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 8;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+  .label {
+    font-size: 3.2;
+    font-weight: medium;
+    text-align: center;
+  }
+  .small {
+    font-size: 2.6;
+    font-weight: medium;
+    text-align: center;
+  }
+  .row {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 8;
+    padding-left: 4;
+    padding-right: 4;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+  .switch {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 12;
+    height: 6;
+    padding-left: 0.6;
+    padding-right: 0.6;
+    border-width: 0.3;
+    border-radius: 3;
+  }
+  .knob {
+    width: 4.2;
+    height: 4.2;
+    border-width: 0;
+    border-radius: 2.1;
+  }
+</style>
+<div id="settings-root" class="panel" style="width: 50;">
+  <div class="header" style="width: 44;">
+    <span id="settings-title" class="title">SETTINGS</span>
+    <div id="settings-fold" class="fold"><span id="settings-fold-label" class="label">-</span></div>
+  </div>
+  <div id="settings-content" class="content">
+    <div id="set-row-satellite" class="row" style="display: flex; width: 44;">
+      <span id="set-label-satellite" class="label">Satellite view</span>
+      <div id="set-switch-satellite" class="switch"><div id="set-knob-satellite" class="knob"></div></div>
+    </div>
+    <div id="set-row-dark" class="row" style="display: flex; width: 44;">
+      <span id="set-label-dark" class="label">Dark mode</span>
+      <div id="set-switch-dark" class="switch"><div id="set-knob-dark" class="knob"></div></div>
+    </div>
+    <div id="set-row-3d" class="row" style="display: flex; width: 44;">
+      <span id="set-label-3d" class="label">3D buildings</span>
+      <div id="set-switch-3d" class="switch"><div id="set-knob-3d" class="knob"></div></div>
+    </div>
+  </div>
+</div>

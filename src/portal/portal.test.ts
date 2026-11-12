@@ -226,3 +226,23 @@ describe('mode state machine and stencil', () => {
     expect(r.closed).toHaveLength(0);
   });
 });
+
+describe('resize and glass tap', () => {
+  it('scales with the handle distance and clamps both ways', async () => {
+    const { resizeScale } = await import('./portal-logic.js');
+    expect(resizeScale(1, 1, 1.3, 0.6, 1.6)).toBeCloseTo(1.3);
+    expect(resizeScale(1.2, 1.5, 0.75, 0.6, 1.6)).toBeCloseTo(0.6);
+    expect(resizeScale(1, 1, 5, 0.6, 1.6)).toBe(1.6);
+    expect(resizeScale(1, 1, 0.01, 0.6, 1.6)).toBe(0.6);
+    expect(resizeScale(1.1, 0, 2, 0.6, 1.6)).toBe(1.1); // degenerate start: keep the scale
+    expect(resizeScale(1.1, 1, Number.NaN, 0.6, 1.6)).toBe(1.1);
+  });
+
+  it('a short still press on the glass is a tap; a hold or a move is a drag', async () => {
+    const { isGlassTap } = await import('./portal-logic.js');
+    expect(isGlassTap(0, 150)).toBe(true);
+    expect(isGlassTap(0.02, 400)).toBe(true);
+    expect(isGlassTap(0.05, 150)).toBe(false);
+    expect(isGlassTap(0, 900)).toBe(false);
+  });
+});

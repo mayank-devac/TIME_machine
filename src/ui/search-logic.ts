@@ -1,4 +1,4 @@
-/** Pure logic for the in-room search panel (no DOM, no three). */
+/** Pure logic for the in-room search panel (no DOM, no three). All copy is plain ASCII. */
 import type { Mode } from '../contracts.js';
 
 export const SEARCH_MAX_CHARS = 40;
@@ -31,7 +31,7 @@ export const canSearch = (text: string): boolean => text.trim().length >= SEARCH
 /** What the text box shows: the placeholder when empty, the tail of long text, and a caret. */
 export function displayText(text: string, caret: boolean): { text: string; placeholder: boolean } {
   if (text.length === 0) return { text: SEARCH_PLACEHOLDER, placeholder: true };
-  const tail = text.length > 28 ? `…${text.slice(-27)}` : text;
+  const tail = text.length > 28 ? `...${text.slice(-25)}` : text;
   return { text: caret ? `${tail}|` : tail, placeholder: false };
 }
 
@@ -39,5 +39,5 @@ export function displayText(text: string, caret: boolean): { text: string; place
 export function resultLabel(label: string): string {
   const parts = label.split(',').map((s) => s.trim()).filter(Boolean);
   const short = parts.slice(0, 2).join(', ') || 'Unnamed place';
-  return short.length > 34 ? `${short.slice(0, 33)}…` : short;
+  return short.length > 34 ? `${short.slice(0, 31)}...` : short;
 }

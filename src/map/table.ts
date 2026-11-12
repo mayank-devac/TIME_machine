@@ -1,17 +1,19 @@
 /**
- * The tabletop map: MapLibre (OpenFreeMap "liberty" style + Mapillary panorama coverage) drawn
- * into an offscreen canvas, shown as a CanvasTexture on a plane at table height.
+ * The tabletop map: MapLibre (raster base map + Mapillary panorama coverage) drawn into an
+ * offscreen canvas, shown as a CanvasTexture on a plane at table height.
  *
  * Input goes through IWSDK's pointer events (RayInteractable), which cover the desktop mouse,
  * controller rays (trigger) and hand rays (pinch) with the same code:
  *  - one pointer pressed and moved: pan; pressed and released in place: pick a street.
- *  - two pointers pressed (two hands or two controllers): spread to zoom.
- *  - mouse wheel: zoom; right controller thumbstick up/down: zoom.
+ *  - two pointers pressed (two hands pinching, or two controllers): spread or close to zoom.
+ *  - zoom rail on the right rim: press and drag along it (one hand or one controller).
+ *  - either controller thumbstick up/down: zoom; mouse wheel: zoom.
+ * Every zoom input sets a clamped target; the map eases to it (see `stepZoom` in `geo.ts`).
+ * The whole table can be moved by the grip bar on its near edge (`DragRig`).
  */
 import {
   BoxGeometry,
   CanvasTexture,
-  Group,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
@@ -26,8 +28,13 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { config } from '../config.js';
-import type { CuratedSpot, EventBus, LatLng, MapTable, SpotInfo } from '../contracts.js';
-import { MapTableTag } from '../track-components.js';
+import type { CuratedSpot, EventBus, LatLng, MapTable, Prefs, SpotInfo } from '../contracts.js';
+import { DragRig, placements, stopBubbling } from '../drag.js';
+import { setHoverTint } from '../hover.js';
+import { baseMapFor } from '../prefs.js';
+import type { BaseMapKind } from '../prefs.js';
+import { currentTokens, hexAlpha, hexNumber, mix, opaque } from '../theme.js';
+import { HoverFx, MapTableTag } from '../track-components.js';
 import {
   clampZoom,
   isTap,
@@ -37,23 +44,20 @@ import {
   nearestOnPolylines,
   pinchZoom,
   planeLocalToPixel,
+  railToZoom,
+  stepZoom,
+  stickZoomRate,
   type MapView,
   type Pixel,
   wheelZoom,
   zoomAround,
+  zoomToRail,
   panByPixels,
 } from './geo.js';
 import { RedrawScheduler } from './redraw.js';
 
 export const MAPILLARY_TILES = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}';
-export type BaseMapKind = 'satellite' | 'dark' | 'light';
-export const BASE_MAP_KINDS: ReadonlyArray<{ id: BaseMapKind; label: string }> = [
-  { id: 'satellite', label: 'Satellite' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'light', label: 'Light' },
-];
-const KIND_STORAGE_KEY = 'tm-base-map';
-const BUILDINGS_STORAGE_KEY = 'tm-buildings-3d';
+export type { BaseMapKind };
 
 /** Rim credit line; names the imagery provider only when satellite imagery is showing. */
 export function mapCredit(kind: BaseMapKind, buildings3d = false): string {
@@ -80,7 +84,7 @@ const esriTiles = (service: string): string[] => [`${ESRI}/${service}/MapServer/
 export function buildBaseStyle(kind: BaseMapKind): StyleSpecification {
   const sources: StyleSpecification['sources'] = {};
   const layers: LayerSpecification[] = [
-    { id: 'background', type: 'background', paint: { 'background-color': '#10131f' } },
+    { id: 'background', type: 'background', paint: { 'background-color': opaque(currentTokens().background) } },
   ];
   const raster = (id: string, service: string, maxzoom: number, attribution?: string): void => {
     sources[id] = { type: 'raster', tiles: esriTiles(service), tileSize: 256, maxzoom, attribution };
@@ -109,6 +113,16 @@ const SNAP_PX = 48;
 const TABLE_Z = -1.15;
 /** Stop pending-tile redraws when MapLibre has reported no new data for this long, ms. */
 const PENDING_QUIET_MS = 3000;
+/** Margin of slab around the map: the rim strips sit on it front and back, the zoom rail on the right. */
+const RIM_M = 0.13;
+/** Zoom rail: a strip on the right rim. Dragging toward the far end zooms in. */
+const RAIL_LENGTH_M = 0.5;
+const RAIL_WIDTH_M = 0.05;
+const RAIL_KNOB_M = 0.035;
+/** Longest gap between two easing steps, ms, so a stalled frame cannot make the zoom jump. */
+const MAX_EASE_STEP_MS = 100;
+/** Panel id of the table in `placements`. */
+const TABLE_ID = 'map-table';
 
 export interface TableStats {
   styleLoaded: boolean;
@@ -141,38 +155,38 @@ interface ActivePointer {
   t0: number;
 }
 
-function readStoredKind(): BaseMapKind {
-  try {
-    const v = localStorage.getItem(KIND_STORAGE_KEY);
-    if (v === 'satellite' || v === 'dark' || v === 'light') return v;
-  } catch {
-    /* storage may be unavailable */
-  }
-  return 'satellite';
-}
-
-function readStored3D(): boolean {
-  try {
-    return localStorage.getItem(BUILDINGS_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
 export class TableMap implements MapTable {
-  readonly root = new Group();
+  /** The grabbable rig; its `root` is the table's root object. */
+  private readonly rig: DragRig;
   readonly view: MapView;
   private readonly size = config.map.tableSizeM;
   private readonly px = config.map.canvasPx;
   private readonly holder: HTMLDivElement;
   private map: maplibregl.Map | null = null;
   private texture: CanvasTexture | null = null;
-  private readonly mapMaterial = new MeshBasicMaterial({ color: 0x2a2f36, toneMapped: false });
+  /** Shows the `surface` token until the map canvas is ready, then white (texture only). */
+  private readonly mapMaterial = new MeshBasicMaterial({ toneMapped: false });
   private readonly mapMesh: Mesh;
+  private readonly slabMaterial = new MeshBasicMaterial({ transparent: true, depthWrite: false });
+  private readonly railMaterial = new MeshBasicMaterial({ toneMapped: false });
+  private readonly knobMaterial = new MeshBasicMaterial({ toneMapped: false });
+  private readonly railMesh: Mesh;
+  private readonly knobMesh: Mesh;
+  private readonly surfaceEntity: Entity;
   private readonly entities: Entity[] = [];
-  private baseKind: BaseMapKind = readStoredKind();
-  private buildings3d = readStored3D();
+  private baseKind: BaseMapKind;
+  private themeName: Prefs['theme'];
+  private buildings3d: boolean;
   private creditMesh: Mesh | null = null;
+  private hintMesh: Mesh | null = null;
+  /** Where the eased zoom is heading, and the canvas pixel that stays put while it gets there. */
+  private zoomTarget: number;
+  private zoomAnchor: Pixel = { x: 0, y: 0 };
+  private lastEaseAt = 0;
+  /** Canvas pixel under the last pointer that moved over the map, or null: the thumbstick's anchor. */
+  private hoverPixel: Pixel | null = null;
+  private readonly hoverScratch: Pixel = { x: 0, y: 0 };
+  private railPointer: number | null = null;
   private lastPick: { lat: number; lng: number } | null = null;
   private readonly scheduler = new RedrawScheduler();
   private readonly offs: Array<() => void> = [];
@@ -198,8 +212,13 @@ export class TableMap implements MapTable {
     private readonly bus: EventBus,
     start: LatLng,
     private readonly token: string | undefined,
+    prefs: Readonly<Prefs>,
   ) {
     this.view = { lat: start.lat, lng: start.lng, zoom: config.map.defaultZoom };
+    this.zoomTarget = this.view.zoom;
+    this.baseKind = baseMapFor(prefs);
+    this.themeName = prefs.theme;
+    this.buildings3d = prefs.buildings3d;
 
     // Offscreen holder. MapLibre sizes its canvas from clientWidth/Height, which are unreliable
     // in hidden or immersive pages (the spike saw 0 x 0), so pin them.
@@ -211,13 +230,22 @@ export class TableMap implements MapTable {
     document.body.appendChild(holder);
     this.holder = holder;
 
+    // The table can be dragged by the grip on its near edge. It keeps its heading (north stays
+    // the far edge) and stays at a usable table height.
+    this.rig = new DragRig(world, {
+      id: TABLE_ID,
+      gripWidthM: 0.5,
+      gripHeightM: 0.045,
+      faceHead: false,
+      limits: { minDist: 0, maxDist: 3, minY: 0.5, maxY: 1.3 },
+    });
+    this.rig.entity.addComponent(MapTableTag, { slot: 'table' });
+    this.rig.grip.rotation.x = -Math.PI / 2; // lie flat so it is seen from above
+    this.rig.placeGrip(0, -0.01, this.size / 2 + RIM_M + 0.05);
     this.root.name = 'MapTable';
-    this.root.position.set(0, config.map.tableHeightM, TABLE_Z);
+    this.resetPlacement();
 
-    const slab = new Mesh(
-      new BoxGeometry(this.size + 0.06, 0.04, this.size + 0.14),
-      new MeshBasicMaterial({ color: 0x8fa0d8, transparent: true, opacity: 0.22, depthWrite: false }),
-    );
+    const slab = new Mesh(new BoxGeometry(this.size + RIM_M * 2, 0.04, this.size + RIM_M * 2), this.slabMaterial);
     slab.position.y = -0.0205;
     this.root.add(slab);
 
@@ -227,21 +255,70 @@ export class TableMap implements MapTable {
     this.mapMesh.position.y = 0.001;
     this.mapMesh.onBeforeRender = () => this.tick();
 
-    this.rebuildCredit();
-    this.root.add(
-      this.textStrip('Drag to pan  ·  two hands to zoom  ·  tap a glowing street', -(this.size / 2 + 0.035), '#7ff5ea', 28),
-    );
+    // Zoom rail: a strip on the right rim with a knob that shows the zoom level.
+    this.railMesh = new Mesh(new PlaneGeometry(RAIL_WIDTH_M, RAIL_LENGTH_M), this.railMaterial);
+    this.railMesh.name = 'MapZoomRail';
+    this.railMesh.rotation.x = -Math.PI / 2;
+    this.railMesh.position.set(this.size / 2 + RIM_M / 2, 0.002, 0);
+    this.knobMesh = new Mesh(new PlaneGeometry(RAIL_WIDTH_M + 0.02, RAIL_KNOB_M), this.knobMaterial);
+    this.knobMesh.name = 'MapZoomKnob';
+    this.knobMesh.position.z = 0.002;
+    this.railMesh.add(this.knobMesh);
+    setHoverTint(this.railMesh, [this.knobMaterial], 'textSecondary');
 
-    const rootEntity = world.createTransformEntity(this.root, { persistent: true });
-    rootEntity.addComponent(MapTableTag, { slot: 'table' });
-    const surface = world.createTransformEntity(this.mapMesh, { parent: rootEntity, persistent: true });
-    surface.addComponent(MapTableTag, { slot: 'surface' });
-    surface.addComponent(RayInteractable);
-    this.entities.push(surface, rootEntity);
+    this.applyColours();
+
+    this.surfaceEntity = world.createTransformEntity(this.mapMesh, { parent: this.rig.entity, persistent: true });
+    this.surfaceEntity.addComponent(MapTableTag, { slot: 'surface', value: this.view.zoom });
+    this.surfaceEntity.addComponent(RayInteractable);
+    const rail = world.createTransformEntity(this.railMesh, { parent: this.rig.entity, persistent: true });
+    rail.addComponent(MapTableTag, { slot: 'zoom-rail' });
+    rail.addComponent(RayInteractable);
+    rail.addComponent(HoverFx, { slot: 'grip' });
+    // Presses on the map and the rail are pan, pick and zoom; they must not drag the table.
+    stopBubbling(this.mapMesh);
+    stopBubbling(this.railMesh);
+    this.entities.push(this.surfaceEntity, rail);
 
     this.bindPointers();
+    this.bindRail();
     this.bindThumbstick();
+    this.syncKnob();
     void this.createMap();
+  }
+
+  get root(): DragRig['root'] {
+    return this.rig.root;
+  }
+
+  /** Put the table back at its default spot in front of the origin and forget any drag. */
+  resetPlacement(): void {
+    placements.delete(TABLE_ID);
+    this.root.position.set(0, config.map.tableHeightM, TABLE_Z);
+    this.root.rotation.set(0, 0, 0);
+  }
+
+  /** Settings changed: base map, theme colours, 3D buildings. */
+  applyPrefs(prefs: Readonly<Prefs>): void {
+    const kind = baseMapFor(prefs);
+    if (kind !== this.baseKind || prefs.theme !== this.themeName) {
+      this.baseKind = kind;
+      this.themeName = prefs.theme;
+      this.applyColours();
+      this.restyleMap();
+    }
+    this.set3D(prefs.buildings3d);
+  }
+
+  /** Everything on the table that is not the map picture, from the current theme. */
+  private applyColours(): void {
+    const t = currentTokens();
+    this.slabMaterial.color.setHex(hexNumber(t.background));
+    this.slabMaterial.opacity = hexAlpha(t.background);
+    if (!this.texture) this.mapMaterial.color.setHex(hexNumber(t.surface));
+    this.railMaterial.color.setHex(hexNumber(t.surface));
+    setHoverTint(this.railMesh, [this.knobMaterial], 'textSecondary');
+    this.rebuildStrips();
   }
 
   // --- MapTable ------------------------------------------------------------------------------
@@ -256,8 +333,23 @@ export class TableMap implements MapTable {
   hide(): void {
     this.visible = false;
     this.root.visible = false;
+    // Let go of any pointer held on the map or the rail, or its capture would outlive the table.
+    for (const id of this.pointers.keys()) this.release(this.mapMesh, id);
     this.pointers.clear();
+    if (this.railPointer !== null) this.release(this.railMesh, this.railPointer);
+    this.railPointer = null;
     this.gesture.active = false;
+    this.multiTouched = false;
+    this.hoverPixel = null;
+    this.zoomTarget = this.view.zoom; // drop an ease in progress
+  }
+
+  private release(mesh: Mesh, pointerId: number): void {
+    try {
+      mesh.releasePointerCapture(pointerId);
+    } catch {
+      /* capture is best-effort */
+    }
   }
 
   flyTo(lat: number, lng: number, zoom?: number): void {
@@ -265,7 +357,24 @@ export class TableMap implements MapTable {
     this.view.lat = lat;
     this.view.lng = lng;
     if (zoom !== undefined) this.view.zoom = clampZoom(zoom);
+    this.zoomTarget = this.view.zoom;
     this.applyView();
+  }
+
+  /**
+   * Ask for a zoom level. Every zoom input ends here: the level is clamped to the table's
+   * range, and the map eases to it in `tick()` keeping canvas pixel (ax, ay) fixed.
+   */
+  zoomTo(z: number, ax = this.px / 2, ay = this.px / 2): void {
+    this.zoomTarget = clampZoom(z);
+    this.zoomAnchor.x = ax;
+    this.zoomAnchor.y = ay;
+    if (this.zoomTarget !== this.view.zoom) this.scheduler.markDirty();
+  }
+
+  /** The zoom level the map is easing toward. */
+  get targetZoom(): number {
+    return this.zoomTarget;
   }
 
   // --- curated spots and pick marker -----------------------------------------------------------
@@ -410,7 +519,7 @@ export class TableMap implements MapTable {
     this.applyView();
   }
 
-  /** Zoom to `z` keeping the ground under canvas pixel (ax, ay) fixed, flat or tilted. */
+  /** Set the zoom to `z` now, keeping the ground under canvas pixel (ax, ay) fixed, flat or tilted. */
   private zoomAt(ax: number, ay: number, z: number): void {
     const m = this.map;
     if (this.buildings3d && m) {
@@ -427,16 +536,11 @@ export class TableMap implements MapTable {
     }
   }
 
-  /** 3D buildings and a tilted camera. Off by default; remembered between visits. */
+  /** 3D buildings and a tilted camera. Off by default; the choice is saved by `PrefsStore`. */
   set3D(on: boolean): void {
     if (on === this.buildings3d) return;
     this.buildings3d = on;
-    try {
-      localStorage.setItem(BUILDINGS_STORAGE_KEY, on ? '1' : '0');
-    } catch {
-      /* storage may be unavailable */
-    }
-    this.rebuildCredit();
+    this.rebuildStrips();
     const map = this.map;
     if (map) {
       if (map.getLayer(BUILDINGS_LAYER)) map.setLayoutProperty(BUILDINGS_LAYER, 'visibility', on ? 'visible' : 'none');
@@ -461,8 +565,11 @@ export class TableMap implements MapTable {
     this.map = null;
     this.texture?.dispose();
     this.holder.remove();
+    for (const strip of [this.creditMesh, this.hintMesh]) if (strip) this.disposeStrip(strip);
     for (const e of this.entities) e.dispose();
     this.entities.length = 0;
+    this.rig.dispose();
+    this.slabMaterial.dispose();
   }
 
   // --- MapLibre ----------------------------------------------------------------------------------
@@ -515,7 +622,7 @@ export class TableMap implements MapTable {
     tex.anisotropy = 4;
     this.texture = tex;
     this.mapMaterial.map = tex;
-    this.mapMaterial.color.set(0xffffff);
+    this.mapMaterial.color.setScalar(1); // no tint: show the map texture as drawn
     this.mapMaterial.needsUpdate = true;
     this.scheduler.markDirty();
     this.log('map-created', { canvas: `${map.getCanvas().width}x${map.getCanvas().height}` });
@@ -523,6 +630,10 @@ export class TableMap implements MapTable {
 
   /** Put the coverage layer below the first label layer, and add spot and pick markers. */
   private addOverlays(style: StyleSpecification): void {
+    const t = currentTokens();
+    // Over satellite imagery the buildings take the dark surface; on a drawn map, a tone
+    // between the panel surface and its border so they read as raised blocks.
+    const buildingColour = mix(t.surface, t.border, 0.5);
     style.sources = { ...style.sources };
     const layers: LayerSpecification[] = [...style.layers];
     const firstSymbol = layers.findIndex((l) => l.type === 'symbol');
@@ -543,7 +654,7 @@ export class TableMap implements MapTable {
         filter: ['==', ['get', 'is_pano'], true],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#19d3c5',
+          'line-color': t.success,
           'line-opacity': 0.9,
           'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 15, 5, 18, 9],
         },
@@ -566,7 +677,7 @@ export class TableMap implements MapTable {
       minzoom: 14,
       layout: { visibility: this.buildings3d ? 'visible' : 'none' },
       paint: {
-        'fill-extrusion-color': '#c9c3f2',
+        'fill-extrusion-color': buildingColour,
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
         'fill-extrusion-opacity': 0.88,
@@ -582,8 +693,8 @@ export class TableMap implements MapTable {
         source: 'tm-spots',
         paint: {
           'circle-radius': 14,
-          'circle-color': '#7c6cff',
-          'circle-stroke-color': '#ffffff',
+          'circle-color': t.accent,
+          'circle-stroke-color': t.onAccent,
           'circle-stroke-width': 4,
         },
       },
@@ -598,7 +709,7 @@ export class TableMap implements MapTable {
           'text-offset': [0, 1.2],
           'text-anchor': 'top',
         },
-        paint: { 'text-color': '#2a2350', 'text-halo-color': '#ffffff', 'text-halo-width': 3 },
+        paint: { 'text-color': t.textPrimary, 'text-halo-color': opaque(t.background), 'text-halo-width': 3 },
       },
       {
         id: 'tm-pick',
@@ -606,8 +717,8 @@ export class TableMap implements MapTable {
         source: 'tm-pick',
         paint: {
           'circle-radius': 18,
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': '#ff5fb5',
+          'circle-opacity': 0,
+          'circle-stroke-color': t.accent,
           'circle-stroke-width': 6,
         },
       },
@@ -615,19 +726,14 @@ export class TableMap implements MapTable {
     style.layers = layers;
   }
 
-  /** Switch the table's base map (satellite, dark or light). Keeps the view, spots and pick marker. */
-  setBaseMap(kind: BaseMapKind): void {
-    if (kind === this.baseKind) return;
-    this.baseKind = kind;
-    try {
-      localStorage.setItem(KIND_STORAGE_KEY, kind);
-    } catch {
-      /* storage may be unavailable */
-    }
-    this.rebuildCredit();
+  /**
+   * Rebuild the MapLibre style for the current base map and theme (satellite, dark or light,
+   * plus the overlay colours). Keeps the view, spots and pick marker.
+   */
+  private restyleMap(): void {
     const map = this.map;
     if (!map) return;
-    const style = buildBaseStyle(kind);
+    const style = buildBaseStyle(this.baseKind);
     this.addOverlays(style);
     map.once('style.load', () => {
       if (this.lastPick) this.markPick(this.lastPick.lat, this.lastPick.lng);
@@ -641,16 +747,28 @@ export class TableMap implements MapTable {
     return this.baseKind;
   }
 
-  private rebuildCredit(): void {
-    if (this.creditMesh) {
-      this.root.remove(this.creditMesh);
-      this.creditMesh.geometry.dispose();
-      const m = this.creditMesh.material as MeshBasicMaterial;
-      m.map?.dispose();
-      m.dispose();
-    }
-    this.creditMesh = this.textStrip(mapCredit(this.baseKind, this.buildings3d),this.size / 2 + 0.035, 'rgba(255,255,255,0.8)', 26);
-    this.root.add(this.creditMesh);
+  private disposeStrip(strip: Mesh): void {
+    this.root.remove(strip);
+    strip.geometry.dispose();
+    const m = strip.material as MeshBasicMaterial;
+    m.map?.dispose();
+    m.dispose();
+  }
+
+  /** The two text strips on the rim: how to use the table (far edge), map credit (near edge). */
+  private rebuildStrips(): void {
+    const t = currentTokens();
+    if (this.creditMesh) this.disposeStrip(this.creditMesh);
+    if (this.hintMesh) this.disposeStrip(this.hintMesh);
+    const z = this.size / 2 + RIM_M / 2;
+    this.hintMesh = this.textStrip(
+      'Drag to pan  ·  spread two hands or slide the rail to zoom  ·  tap a glowing street',
+      -z,
+      t.textPrimary,
+      26,
+    );
+    this.creditMesh = this.textStrip(mapCredit(this.baseKind, this.buildings3d), z, t.textSecondary, 26);
+    this.root.add(this.hintMesh, this.creditMesh);
   }
 
   private applyView(): void {
@@ -662,6 +780,18 @@ export class TableMap implements MapTable {
     });
     this.scheduler.markDirty();
     this.scheduleViewEvent();
+    if (this.view.zoom !== this.shownZoom) {
+      this.shownZoom = this.view.zoom;
+      // The live zoom is readable from outside as `MapTableTag.value` on the surface entity.
+      this.surfaceEntity.setValue(MapTableTag, 'value', this.view.zoom);
+      this.syncKnob();
+    }
+  }
+  private shownZoom = Number.NaN;
+
+  /** Move the rail's knob to the current zoom level. */
+  private syncKnob(): void {
+    this.knobMesh.position.y = (zoomToRail(this.view.zoom) - 0.5) * (RAIL_LENGTH_M - RAIL_KNOB_M);
   }
 
   /** Tell the rest of the app where the map is looking, once the user stops moving it. */
@@ -684,6 +814,12 @@ export class TableMap implements MapTable {
     const tex = this.texture;
     if (!m || !tex || !this.visible) return;
     const now = performance.now();
+    // Ease the zoom toward its target, one step per rendered frame.
+    if (this.view.zoom !== this.zoomTarget) {
+      const dt = Math.min(MAX_EASE_STEP_MS, now - this.lastEaseAt);
+      this.zoomAt(this.zoomAnchor.x, this.zoomAnchor.y, stepZoom(this.view.zoom, this.zoomTarget, dt));
+    }
+    this.lastEaseAt = now;
     // Keep polling while tiles arrive, but stop after a quiet spell so a stalled tile request
     // does not keep re-uploading a 2048 px texture several times a second forever.
     this.scheduler.setPending(!m.loaded() && now - this.lastDataAt < PENDING_QUIET_MS);
@@ -742,9 +878,13 @@ export class TableMap implements MapTable {
     };
 
     const move = (e: { pointerId: number; point: Vector3 }): void => {
+      const p = this.hitToPixel(e.point);
+      // Remember where a ray rests on the map, pressed or not: the thumbstick zooms around it.
+      this.hoverScratch.x = p.x;
+      this.hoverScratch.y = p.y;
+      this.hoverPixel = this.hoverScratch;
       const ptr = this.pointers.get(e.pointerId);
       if (!ptr) return;
-      const p = this.hitToPixel(e.point);
       const dx = p.x - ptr.x;
       const dy = p.y - ptr.y;
       if (dx === 0 && dy === 0) return;
@@ -770,7 +910,7 @@ export class TableMap implements MapTable {
       const single = !this.multiTouched;
       if (this.pointers.size < 2) this.gesture.active = false;
       if (this.pointers.size === 0) this.multiTouched = false;
-      if (!cancelled && single && isTap(ptr.travel, performance.now() - ptr.t0, this.px)) {
+      if (!cancelled && single && isTap(ptr.travel, performance.now() - ptr.t0, this.px, this.size)) {
         this.pickAtPixel(ptr.x, ptr.y);
       } else {
         this.log('drag-end', { travelPx: Math.round(ptr.travel), view: this.view });
@@ -784,19 +924,66 @@ export class TableMap implements MapTable {
     const onWheel = (e: { point: Vector3; deltaY: number }) => {
       if (!this.visible) return;
       const p = this.hitToPixel(e.point);
-      this.zoomAt(p.x, p.y, wheelZoom(this.view.zoom, e.deltaY));
+      this.zoomTo(wheelZoom(this.zoomTarget, e.deltaY), p.x, p.y);
+    };
+    const onLeave = (): void => {
+      this.hoverPixel = null;
     };
     mesh.addEventListener('pointerdown', onDown);
     mesh.addEventListener('pointermove', onMove);
     mesh.addEventListener('pointerup', onUp);
     mesh.addEventListener('pointercancel', onCancel);
+    mesh.addEventListener('pointerleave', onLeave);
     mesh.addEventListener('wheel', onWheel);
     this.offs.push(() => {
       mesh.removeEventListener('pointerdown', onDown);
       mesh.removeEventListener('pointermove', onMove);
       mesh.removeEventListener('pointerup', onUp);
       mesh.removeEventListener('pointercancel', onCancel);
+      mesh.removeEventListener('pointerleave', onLeave);
       mesh.removeEventListener('wheel', onWheel);
+    });
+  }
+
+  /**
+   * Zoom rail: press anywhere on it and drag along it. The position along the rail maps
+   * straight onto the zoom range (near end = widest view, far end = closest), so one hand or
+   * one controller can zoom, and the knob doubles as a zoom-level readout.
+   */
+  private bindRail(): void {
+    const rail = this.railMesh;
+    const zoomFromHit = (point: Vector3): void => {
+      // PlaneGeometry local y runs along the rail; after the flat rotation +y is the far end.
+      const local = rail.worldToLocal(this.tmpLocal.copy(point));
+      this.zoomTo(railToZoom(local.y / RAIL_LENGTH_M + 0.5));
+    };
+    const onDown = (e: { pointerId: number; point: Vector3; button?: number }): void => {
+      if (!this.visible || (e.button !== undefined && e.button !== 0)) return;
+      this.railPointer = e.pointerId;
+      try {
+        rail.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture is best-effort */
+      }
+      zoomFromHit(e.point);
+    };
+    const onMove = (e: { pointerId: number; point: Vector3 }): void => {
+      if (e.pointerId === this.railPointer) zoomFromHit(e.point);
+    };
+    const onUp = (e: { pointerId: number }): void => {
+      if (e.pointerId !== this.railPointer) return;
+      this.railPointer = null;
+      this.release(rail, e.pointerId);
+    };
+    rail.addEventListener('pointerdown', onDown);
+    rail.addEventListener('pointermove', onMove);
+    rail.addEventListener('pointerup', onUp);
+    rail.addEventListener('pointercancel', onUp);
+    this.offs.push(() => {
+      rail.removeEventListener('pointerdown', onDown);
+      rail.removeEventListener('pointermove', onMove);
+      rail.removeEventListener('pointerup', onUp);
+      rail.removeEventListener('pointercancel', onUp);
     });
   }
 
@@ -816,7 +1003,7 @@ export class TableMap implements MapTable {
     const [a, b] = pair;
     const g = this.gesture;
     g.active = true;
-    g.startZoom = this.view.zoom;
+    g.startZoom = this.zoomTarget; // continue from where an ease in progress is heading
     g.startDist = Math.hypot(a.x - b.x, a.y - b.y);
     g.midX = (a.x + b.x) / 2;
     g.midY = (a.y + b.y) / 2;
@@ -829,8 +1016,7 @@ export class TableMap implements MapTable {
     const g = this.gesture;
     const midX = (a.x + b.x) / 2;
     const midY = (a.y + b.y) / 2;
-    const z = pinchZoom(g.startZoom, g.startDist, Math.hypot(a.x - b.x, a.y - b.y));
-    this.zoomAt(midX, midY, z);
+    this.zoomTo(pinchZoom(g.startZoom, g.startDist, Math.hypot(a.x - b.x, a.y - b.y)), midX, midY);
     this.tmpPixel.x = midX;
     this.tmpPixel.y = midY;
     this.panBy(this.tmpPixel, midX - g.midX, midY - g.midY);
@@ -838,17 +1024,21 @@ export class TableMap implements MapTable {
     g.midY = midY;
   }
 
-  /** Controller fallback: right thumbstick up zooms in, down zooms out. */
+  /**
+   * Controllers: either thumbstick, pushed away to zoom in, pulled back to zoom out. Zooms
+   * around the spot a ray rests on the map, or the centre when no ray is on it.
+   */
   private bindThumbstick(): void {
     const off = this.world.onXRFrame((_frame, delta) => {
       if (!this.visible || !this.map) return;
-      const pad = this.world.input.xr.gamepads.right;
-      const axes = pad?.getAxesValues('xr-standard-thumbstick');
-      const y = axes?.y ?? 0;
-      if (Math.abs(y) < 0.25) return;
-      const z = clampZoom(this.view.zoom - y * delta * 1.5);
-      if (z === this.view.zoom) return;
-      this.zoomAt(this.px / 2, this.px / 2, z);
+      const pads = this.world.input.xr.gamepads;
+      const left = pads.left?.getAxesValues('xr-standard-thumbstick')?.y ?? 0;
+      const right = pads.right?.getAxesValues('xr-standard-thumbstick')?.y ?? 0;
+      // Whichever stick is pushed further wins, so both hands work and they never add up.
+      const rate = stickZoomRate(Math.abs(left) > Math.abs(right) ? left : right);
+      if (rate === 0) return;
+      const anchor = this.hoverPixel;
+      this.zoomTo(this.zoomTarget + rate * delta, anchor ? anchor.x : this.px / 2, anchor ? anchor.y : this.px / 2);
     });
     this.offs.push(off);
   }

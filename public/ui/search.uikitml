@@ -1,72 +1,171 @@
-<div id="search-root" style="display: flex; flex-direction: column; align-items: center; gap: 2; padding: 3; width: 64; background-color: #0f121c99; border-width: 0; border-radius: 6;">
-  <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; width: 58;">
-    <span id="search-title" style="width: 48; font-size: 2.8; font-weight: medium; color: #ffffffcc; text-align: left;">SEARCH A PLACE</span>
-    <div id="search-visibility" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 8; height: 8; background-color: #ffffff1f; border-width: 0; border-radius: 4; cursor: pointer;">
-      <img src="/assets/hide-svgrepo-com.svg" style="width: 5; height: 5;" />
-    </div>
+<style>
+  .panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+    padding-left: 3;
+    padding-right: 3;
+    padding-top: 3;
+    padding-bottom: 3;
+    border-width: 0.3;
+    border-radius: 4;
+  }
+  .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .title {
+    font-size: 2.8;
+    font-weight: medium;
+    text-align: left;
+  }
+  .fold {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 7;
+    height: 7;
+    border-width: 0.3;
+    border-radius: 3.5;
+    cursor: pointer;
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2;
+  }
+  .btn {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 8;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+  .label {
+    font-size: 3.2;
+    font-weight: medium;
+    text-align: center;
+  }
+  .small {
+    font-size: 2.6;
+    font-weight: medium;
+    text-align: center;
+  }
+  .row {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 8;
+    padding-left: 4;
+    padding-right: 4;
+    border-width: 0.3;
+    border-radius: 4;
+    cursor: pointer;
+  }
+  .keys {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 1;
+  }
+  .key {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 5.4;
+    height: 6.4;
+    border-width: 0.3;
+    border-radius: 2;
+    cursor: pointer;
+  }
+  .input {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 34;
+    height: 8;
+    padding-left: 3;
+    border-width: 0.3;
+    border-radius: 4;
+  }
+  .line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 58;
+  }
+</style>
+<div id="search-root" class="panel" style="width: 64;">
+  <div class="header" style="width: 58;">
+    <span id="search-title" class="title">SEARCH A PLACE</span>
+    <div id="search-fold" class="fold"><span id="search-fold-label" class="label">-</span></div>
   </div>
-  <div id="search-content" style="display: flex; flex-direction: column; align-items: center; gap: 2;">
-  <div style="display: flex; flex-direction: row; align-items: center; gap: 1.5; width: 58;">
-    <div id="search-box" style="display: flex; flex-direction: row; align-items: center; width: 38; height: 8; padding-left: 3; background-color: #ffffff14; border-color: #ffffff38; border-width: 0.3; border-radius: 4;">
-      <span id="search-text" style="font-size: 3; font-weight: medium; color: #ffffff;">Type or speak a place</span>
+  <div id="search-content" class="content">
+    <div class="line">
+      <div id="search-box" class="input"><span id="search-text" class="small">Type or speak a place</span></div>
+      <div id="search-mic" class="btn" style="width: 12;"><span id="search-mic-label" class="small">MIC</span></div>
+      <div id="search-clear" class="btn" style="width: 9;"><span id="search-clear-label" class="small">CLR</span></div>
     </div>
-    <div id="search-mic" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 9; height: 8; background-color: #7c6cff59; border-color: #ffffff38; border-width: 0.3; border-radius: 4; cursor: pointer;">
-      <img id="search-mic-icon" src="/assets/mic-svgrepo-com.svg" style="width: 4.5; height: 4.5;" />
-      <img id="search-mic-stop" src="/assets/stop-svgrepo-com.svg" style="width: 4.5; height: 4.5; display: none;" />
+    <span id="search-status" class="small">Type a place name, then SEARCH.</span>
+    <div id="search-row-0" class="row" style="width: 58; justify-content: flex-start;">
+      <span id="search-row-label-0" class="label">Result</span>
     </div>
-    <div id="search-clear" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 8; height: 8; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 4; cursor: pointer;"><span id="search-clear-label" style="font-size: 3.4; font-weight: medium; color: #ffffff; text-align: center;">X</span></div>
-  </div>
-  <span id="search-status" style="font-size: 2.6; font-weight: medium; color: #ffffffa6; text-align: center;">Pick a place name, then ENTER.</span>
-  <div id="search-row-0" style="display: none; flex-direction: row; align-items: center; justify-content: flex-start; width: 58; height: 7.5; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.75; cursor: pointer;">
-    <span id="search-row-label-0" style="font-size: 2.9; font-weight: medium; color: #ffffff;">Result</span>
-  </div>
-  <div id="search-row-1" style="display: none; flex-direction: row; align-items: center; justify-content: flex-start; width: 58; height: 7.5; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.75; cursor: pointer;">
-    <span id="search-row-label-1" style="font-size: 2.9; font-weight: medium; color: #ffffff;">Result</span>
-  </div>
-  <div id="search-row-2" style="display: none; flex-direction: row; align-items: center; justify-content: flex-start; width: 58; height: 7.5; padding-left: 4; padding-right: 4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.75; cursor: pointer;">
-    <span id="search-row-label-2" style="font-size: 2.9; font-weight: medium; color: #ffffff;">Result</span>
-  </div>
-  <div style="display: flex; flex-direction: column; align-items: center; gap: 1;">
-    <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1;">
-      <div id="search-key-Q" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-Q" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">Q</span></div>
-      <div id="search-key-W" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-W" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">W</span></div>
-      <div id="search-key-E" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-E" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">E</span></div>
-      <div id="search-key-R" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-R" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">R</span></div>
-      <div id="search-key-T" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-T" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">T</span></div>
-      <div id="search-key-Y" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-Y" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">Y</span></div>
-      <div id="search-key-U" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-U" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">U</span></div>
-      <div id="search-key-I" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-I" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">I</span></div>
-      <div id="search-key-O" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-O" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">O</span></div>
-      <div id="search-key-P" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-P" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">P</span></div>
+    <div id="search-row-1" class="row" style="width: 58; justify-content: flex-start;">
+      <span id="search-row-label-1" class="label">Result</span>
     </div>
-    <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1;">
-      <div id="search-key-A" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-A" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">A</span></div>
-      <div id="search-key-S" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-S" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">S</span></div>
-      <div id="search-key-D" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-D" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">D</span></div>
-      <div id="search-key-F" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-F" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">F</span></div>
-      <div id="search-key-G" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-G" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">G</span></div>
-      <div id="search-key-H" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-H" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">H</span></div>
-      <div id="search-key-J" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-J" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">J</span></div>
-      <div id="search-key-K" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-K" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">K</span></div>
-      <div id="search-key-L" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-L" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">L</span></div>
+    <div id="search-row-2" class="row" style="width: 58; justify-content: flex-start;">
+      <span id="search-row-label-2" class="label">Result</span>
     </div>
-    <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1;">
-      <div id="search-key-Z" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-Z" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">Z</span></div>
-      <div id="search-key-X" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-X" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">X</span></div>
-      <div id="search-key-C" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-C" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">C</span></div>
-      <div id="search-key-V" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-V" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">V</span></div>
-      <div id="search-key-B" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-B" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">B</span></div>
-      <div id="search-key-N" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-N" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">N</span></div>
-      <div id="search-key-M" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 5.4; height: 6.4; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-M" style="font-size: 3; font-weight: medium; color: #ffffff; text-align: center;">M</span></div>
-      <div id="search-key-BACK" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 11; height: 6.4; background-color: #ffffff33; border-color: #ffffff38; border-width: 0.3; border-radius: 2; cursor: pointer;"><span id="search-key-label-BACK" style="font-size: 2.6; font-weight: medium; color: #ffffff; text-align: center;">DEL</span></div>
+    <div class="content" style="gap: 1;">
+      <div class="keys">
+        <div id="search-key-Q" class="key"><span id="search-key-label-Q" class="label">Q</span></div>
+        <div id="search-key-W" class="key"><span id="search-key-label-W" class="label">W</span></div>
+        <div id="search-key-E" class="key"><span id="search-key-label-E" class="label">E</span></div>
+        <div id="search-key-R" class="key"><span id="search-key-label-R" class="label">R</span></div>
+        <div id="search-key-T" class="key"><span id="search-key-label-T" class="label">T</span></div>
+        <div id="search-key-Y" class="key"><span id="search-key-label-Y" class="label">Y</span></div>
+        <div id="search-key-U" class="key"><span id="search-key-label-U" class="label">U</span></div>
+        <div id="search-key-I" class="key"><span id="search-key-label-I" class="label">I</span></div>
+        <div id="search-key-O" class="key"><span id="search-key-label-O" class="label">O</span></div>
+        <div id="search-key-P" class="key"><span id="search-key-label-P" class="label">P</span></div>
+      </div>
+      <div class="keys">
+        <div id="search-key-A" class="key"><span id="search-key-label-A" class="label">A</span></div>
+        <div id="search-key-S" class="key"><span id="search-key-label-S" class="label">S</span></div>
+        <div id="search-key-D" class="key"><span id="search-key-label-D" class="label">D</span></div>
+        <div id="search-key-F" class="key"><span id="search-key-label-F" class="label">F</span></div>
+        <div id="search-key-G" class="key"><span id="search-key-label-G" class="label">G</span></div>
+        <div id="search-key-H" class="key"><span id="search-key-label-H" class="label">H</span></div>
+        <div id="search-key-J" class="key"><span id="search-key-label-J" class="label">J</span></div>
+        <div id="search-key-K" class="key"><span id="search-key-label-K" class="label">K</span></div>
+        <div id="search-key-L" class="key"><span id="search-key-label-L" class="label">L</span></div>
+      </div>
+      <div class="keys">
+        <div id="search-key-Z" class="key"><span id="search-key-label-Z" class="label">Z</span></div>
+        <div id="search-key-X" class="key"><span id="search-key-label-X" class="label">X</span></div>
+        <div id="search-key-C" class="key"><span id="search-key-label-C" class="label">C</span></div>
+        <div id="search-key-V" class="key"><span id="search-key-label-V" class="label">V</span></div>
+        <div id="search-key-B" class="key"><span id="search-key-label-B" class="label">B</span></div>
+        <div id="search-key-N" class="key"><span id="search-key-label-N" class="label">N</span></div>
+        <div id="search-key-M" class="key"><span id="search-key-label-M" class="label">M</span></div>
+        <div id="search-key-BACK" class="key" style="width: 11;"><span id="search-key-label-BACK" class="small">DEL</span></div>
+      </div>
     </div>
-  </div>
-  <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 1.5; width: 58;">
-    <div id="search-space" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 24; height: 7; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-space-label" style="font-size: 2.6; font-weight: medium; color: #ffffff; text-align: center;">SPACE</span></div>
-    <div id="search-enter" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 15; height: 7; background-color: #7c6cff59; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;">
-      <img id="search-enter-icon" src="/assets/enter-svgrepo-com.svg" style="width: 4; height: 4;" />
+    <div class="line">
+      <div id="search-space" class="btn" style="width: 34;"><span id="search-space-label" class="small">SPACE</span></div>
+      <div id="search-enter" class="btn" style="width: 22;"><span id="search-enter-label" class="small">SEARCH</span></div>
     </div>
-    <div id="search-use" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 15; height: 7; background-color: #2ee6d659; border-color: #ffffff38; border-width: 0.3; border-radius: 3.5; cursor: pointer;"><span id="search-use-label" style="font-size: 2.8; font-weight: medium; color: #ffffff; text-align: center;">OK</span></div>
-  </div>
   </div>
 </div>

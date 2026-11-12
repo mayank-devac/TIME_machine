@@ -136,8 +136,63 @@ describe('pick snapping', () => {
 
 describe('tap versus drag', () => {
   it('a short, still press is a tap', () => {
-    expect(isTap(5, 200, PX)).toBe(true);
-    expect(isTap(80, 200, PX)).toBe(false);
-    expect(isTap(5, 1500, PX)).toBe(false);
+    expect(isTap(5, 200, PX, 1.7)).toBe(true);
+    expect(isTap(80, 200, PX, 1.7)).toBe(false);
+    expect(isTap(5, 1500, PX, 1.7)).toBe(false);
+    // The threshold is a distance on the table (17 mm), not a share of the canvas.
+    expect(isTap(PX * 0.0099, 200, PX, 1.7)).toBe(true);
+    expect(isTap(PX * 0.0099, 200, PX, 3.4)).toBe(false);
+  });
+});
+
+describe('smooth zoom', () => {
+  it('eases toward the target without overshoot and lands exactly on it', async () => {
+    const { stepZoom, ZOOM_EASE_MS } = await import('./geo.js');
+    let z = 14;
+    const seen: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      z = stepZoom(z, 16, 14); // 72 Hz frames
+      seen.push(z);
+    }
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+    expect(Math.max(...seen)).toBe(16);
+    expect(seen[0]).toBeLessThan(14.5); // no jump on the first frame
+    // One time constant covers 1 - 1/e of the distance.
+    expect(stepZoom(14, 16, ZOOM_EASE_MS)).toBeCloseTo(14 + 2 * (1 - Math.exp(-1)), 5);
+  });
+
+  it('is frame-rate independent and never leaves the clamp', async () => {
+    const { stepZoom } = await import('./geo.js');
+    const once = stepZoom(13, 17, 40);
+    const twice = stepZoom(stepZoom(13, 17, 20), 17, 20);
+    expect(twice).toBeCloseTo(once, 6);
+    let z = 17.5;
+    for (let i = 0; i < 200; i++) z = stepZoom(z, 99, 14);
+    expect(z).toBe(MAX_ZOOM);
+    for (let i = 0; i < 300; i++) z = stepZoom(z, -5, 14);
+    expect(z).toBe(MIN_ZOOM);
+    expect(stepZoom(15, 16, 0)).toBe(15);
+  });
+
+  it('thumbstick: deadzone, direction and full-deflection speed', async () => {
+    const { stickZoomRate, STICK_ZOOM_PER_S } = await import('./geo.js');
+    expect(stickZoomRate(0.2)).toBe(0);
+    expect(stickZoomRate(-0.25)).toBe(0);
+    expect(stickZoomRate(Number.NaN)).toBe(0);
+    expect(stickZoomRate(-1)).toBeCloseTo(STICK_ZOOM_PER_S); // push away = zoom in
+    expect(stickZoomRate(1)).toBeCloseTo(-STICK_ZOOM_PER_S);
+    expect(stickZoomRate(-0.26)).toBeGreaterThan(0);
+    expect(stickZoomRate(-0.26)).toBeLessThan(0.05); // starts from zero at the deadzone edge
+  });
+
+  it('zoom rail maps its length onto the zoom range, both ways', async () => {
+    const { railToZoom, zoomToRail } = await import('./geo.js');
+    expect(railToZoom(0)).toBe(MIN_ZOOM);
+    expect(railToZoom(1)).toBe(MAX_ZOOM);
+    expect(railToZoom(0.5)).toBe((MIN_ZOOM + MAX_ZOOM) / 2);
+    expect(railToZoom(-3)).toBe(MIN_ZOOM);
+    expect(railToZoom(7)).toBe(MAX_ZOOM);
+    expect(zoomToRail(railToZoom(0.3))).toBeCloseTo(0.3);
+    expect(zoomToRail(99)).toBe(1);
   });
 });

@@ -1,87 +1,60 @@
-import { RayInteractable, Vector3, Quaternion } from '@iwsdk/core';
+import { Box3, Quaternion, RayInteractable, Vector3 } from '@iwsdk/core';
 import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
-import type { ArchivePhoto, LatLng, NearbyPlace, Track, TrackFactory, Unsubscribe } from '../contracts.js';
+import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
+import { DragRig, placements, stopBubbling } from '../drag.js';
+import { onThemeChange } from '../theme.js';
 import { HudTag } from '../track-components.js';
-import { searchPlaces } from '../map/photon.js';
-import type { PlaceResult } from '../map/photon.js';
-import {
-  KEY_IDS,
-  SEARCH_RESULTS,
-  SEARCH_ZOOM,
-  applyKey,
-  canSearch,
-  cleanSpoken,
-  displayText,
-  resultLabel,
-  showSearchPanel,
-} from './search-logic.js';
-import { createVoiceInput } from './voice.js';
-import {
-  BusyScopes,
-  SLOTS,
-  slotSpec,
-  STREET_PLACE_MIN_OFFSET_M,
-  ToastQueue,
-  composeCredits,
-  MAX_YEAR_CHIPS,
-  deriveHud,
-  yearChipAction,
-  yearChips,
-  slotPosition,
-  yawFromForward,
-  PLACES_PER_PAGE,
-  placesPage,
-  placesTitle,
-  PLACES_MIN_ZOOM,
-  showMapButton,
-  showPlacesPanel,
-  usablePlaces,
-} from './hud-logic.js';
-import type { PlacesPage } from './hud-logic.js';
+import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotPosition, slotSpec, yawFromForward } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
+import type { Host, PanelModule } from './host.js';
+import { attachHover, forgetStyles, paintBox, paintText, repaintAll } from './panel-style.js';
+import type { El, Fill } from './panel-style.js';
+import { createPlacesPanel } from './places-panel.js';
+import { createSearchPanel } from './search-panel.js';
+import { createSettingsPanel } from './settings-panel.js';
+import { createStreetBar } from './street-bar.js';
 
-const ASSET_IDS: Record<HudSlot, string> = {
-  time: 'hud-time-button',
-  year: 'hud-year-label',
-  credits: 'hud-credits',
-  status: 'hud-status',
-  portal: 'hud-portal-button',
-  info: 'hud-info-button',
-  search: 'hud-search',
-  places: 'hud-places',
-  map: 'hud-map-button',
+interface PanelSpec {
+  /** Manifest id in `src/assets.ts`. */
+  asset: string;
+  /** Id of the panel's root element, measured to put the drag grip under it. */
+  root: string;
+  /** Has controls, so it needs `RayInteractable` for clicks to land. */
+  interactive: boolean;
+  /** Can be moved by its grip. The status toast is transient and stays put. */
+  draggable: boolean;
+}
+
+const PANELS: Readonly<Record<HudSlot, PanelSpec>> = {
+  bar: { asset: 'hud-street-bar', root: 'bar-root', interactive: true, draggable: true },
+  places: { asset: 'hud-places', root: 'places-root', interactive: true, draggable: true },
+  search: { asset: 'hud-search', root: 'search-root', interactive: true, draggable: true },
+  settings: { asset: 'hud-settings', root: 'settings-root', interactive: true, draggable: true },
+  credits: { asset: 'hud-credits', root: 'credits-root', interactive: false, draggable: true },
+  status: { asset: 'hud-status', root: 'status-root', interactive: false, draggable: false },
 };
 
 interface Panel {
   entity: Entity;
   asset: UIKitMLAsset;
-  object: Object3D;
+  rig: DragRig | null;
+  /** What is positioned and shown or hidden: the rig when there is one, else the panel. */
+  node: Object3D;
 }
 
-const COLORS = {
-  // Translucent glass tints: 8-digit hex, last byte is alpha.
-  timeOn: '#7c6cff59',
-  timeBackToNow: '#ff5fb559',
-  timeDisabled: '#ffffff14',
-  textDisabled: '#ffffff66',
-  loading: '#0f121c99',
-  error: '#ff5a5a66',
-  info: '#ffb84d59',
-  yearNow: '#ffffff1f',
-  yearPast: '#ffb84d40',
-  chip: '#ffffff1f',
-  chipSelected: '#7c6cff59',
-  chipPresent: '#ffffff33',
-} as const;
-
 const RECENTRE_AFTER_XR_MS = 700;
+/** UIKit lays a panel out a few frames after a change; measure for the grip after this. */
+const GRIP_SETTLE_MS = 150;
+/** Gap between a panel's bottom edge and its grip, metres. */
+const GRIP_GAP_M = 0.03;
+const SPINNER_FRAMES = ['Loading', 'Loading.', 'Loading..', 'Loading...'];
 
 export const createTrack: TrackFactory = async (ctx) => {
   const { world, bus, state } = ctx;
   const offs: Unsubscribe[] = [];
   const panels = new Map<HudSlot, Panel>();
+  const gripTimers = new Map<HudSlot, ReturnType<typeof setTimeout>>();
   const busy = new BusyScopes();
-  const spinnerFrames = ['Loading', 'Loading.', 'Loading..', 'Loading...'];
   let spinnerIndex = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let recentreTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,6 +67,9 @@ export const createTrack: TrackFactory = async (ctx) => {
   const head = new Vector3();
   const fwd = new Vector3();
   const headQuat = new Quaternion();
+  const savedQuat = new Quaternion();
+  const rigPos = new Vector3();
+  const box3 = new Box3();
   const pos = { x: 0, y: 0, z: 0 };
 
   const toasts = new ToastQueue({
@@ -104,17 +80,75 @@ export const createTrack: TrackFactory = async (ctx) => {
   });
 
   // ---------------------------------------------------------------------------------------
-  // Panels
+  // Panels (persistent app content, not level content)
   // ---------------------------------------------------------------------------------------
-  const text = (slot: HudSlot, id: string): UIKit.Text | null =>
-    panels.get(slot)?.asset.getElementById<UIKit.Text>(id) ?? null;
-  const box = (slot: HudSlot, id: string) => panels.get(slot)?.asset.getElementById(id) ?? null;
-  const setVisible = (slot: HudSlot, visible: boolean): void => {
-    const panel = panels.get(slot);
-    if (panel) panel.object.visible = visible;
+  for (const slot of Object.keys(PANELS) as HudSlot[]) {
+    const spec = PANELS[slot];
+    const asset = await world.assets.instantiate<UIKitMLAsset>(spec.asset);
+    asset.name = `hud-${slot}`;
+    const rig = spec.draggable ? new DragRig(world, { id: `hud-${slot}` }) : null;
+    const entity = world.createTransformEntity(asset, rig ? { parent: rig.entity, persistent: true } : { persistent: true });
+    entity.addComponent(HudTag, { slot });
+    if (spec.interactive) entity.addComponent(RayInteractable);
+    // Pressing a control on the panel must never start a drag; only the grip does.
+    if (rig) stopBubbling(asset);
+    const node = rig ? rig.root : asset;
+    node.visible = false;
+    panels.set(slot, { entity, asset, rig, node });
+  }
+
+  const host: Host = {
+    ctx,
+    el: (slot, id) => panels.get(slot)?.asset.getElementById(id) ?? null,
+    text: (slot, id) => panels.get(slot)?.asset.getElementById<UIKit.Text>(id) ?? null,
+    setVisible(slot, visible) {
+      const panel = panels.get(slot);
+      if (panel) panel.node.visible = visible;
+    },
+    control(el, variant, onClick) {
+      if (!el) return;
+      el.addEventListener('click', onClick);
+      offs.push(() => el.removeEventListener('click', onClick), attachHover(el, variant));
+    },
+    resized(slot) {
+      const pending = gripTimers.get(slot);
+      if (pending !== undefined) clearTimeout(pending);
+      gripTimers.set(
+        slot,
+        setTimeout(() => {
+          gripTimers.delete(slot);
+          placeGrip(slot);
+        }, GRIP_SETTLE_MS),
+      );
+    },
+    get disposed() {
+      return disposed;
+    },
   };
 
-  /** Hard snap of every panel to the head's current position and heading. Never animated. */
+  /** Put a panel's grip just under its bottom edge, measured with the rig turned square on. */
+  function placeGrip(slot: HudSlot): void {
+    const panel = panels.get(slot);
+    const root = host.el(slot, PANELS[slot].root) as (El & Object3D) | null;
+    if (disposed || !panel?.rig || !root) return;
+    const rig = panel.rig.root;
+    savedQuat.copy(rig.quaternion);
+    rig.quaternion.identity();
+    rig.updateMatrixWorld(true);
+    box3.setFromObject(root);
+    rig.getWorldPosition(rigPos);
+    rig.quaternion.copy(savedQuat);
+    rig.updateMatrixWorld(true);
+    const bottom = box3.min.y - rigPos.y;
+    // Before the first layout the box is empty or wild; keep the grip close in that case.
+    const sane = Number.isFinite(bottom) && bottom < 0 && bottom > -1.5;
+    panel.rig.placeGrip(0, (sane ? bottom : -0.06) - GRIP_GAP_M, 0);
+  }
+
+  /**
+   * Hard snap of every panel to the head's current position and heading. Never animated.
+   * A panel the user has dragged stays where they left it.
+   */
   const recentre = (): void => {
     if (disposed) return;
     const camera = world.camera;
@@ -125,11 +159,18 @@ export const createTrack: TrackFactory = async (ctx) => {
     const yaw = yawFromForward(fwd.x, fwd.z);
     const mode = state.get().mode;
     for (const [slot, panel] of panels) {
+      if (panel.rig && placements.has(panel.rig.id)) continue;
       slotPosition(head, yaw, slotSpec(slot, mode), pos);
-      panel.object.position.set(pos.x, pos.y, pos.z);
+      panel.node.position.set(pos.x, pos.y, pos.z);
       // Single-sided panels face +Z; lookAt on a non-camera points +Z at the target.
-      panel.object.lookAt(head);
+      panel.node.lookAt(head);
+      host.resized(slot);
     }
+  };
+
+  /** Forget where the user dragged the panels, then recentre (new XR session, desktop C key). */
+  const resetPlacements = (): void => {
+    for (const panel of panels.values()) if (panel.rig) placements.delete(panel.rig.id);
   };
 
   const scheduleRecentre = (delayMs: number): void => {
@@ -140,278 +181,43 @@ export const createTrack: TrackFactory = async (ctx) => {
     }, delayMs);
   };
 
+  // ---------------------------------------------------------------------------------------
+  // Credits and status (small enough to live here)
+  // ---------------------------------------------------------------------------------------
   const refreshCredits = (): void => {
-    const el = text('credits', 'credits-text');
+    const view = deriveHud({ state: state.get(), yearsKnown });
+    host.setVisible('credits', view.showCredits);
+    paintBox(host.el('credits', 'credits-root'), 'panel');
+    const el = host.text('credits', 'credits-text');
     el?.setProperties({ text: composeCredits(state.get().pano, photos) });
+    paintText(el, 'secondary');
   };
 
-  const refreshStatus = (): void => {
+  function refreshStatus(): void {
     const view = deriveHud({ state: state.get(), yearsKnown });
     let message: string | null = null;
-    let bg: string = COLORS.loading;
+    let fill: Fill = 'panel';
     if (toast) {
       message = toast.message;
-      bg = COLORS.error;
+      fill = 'danger';
     } else if (busy.busy) {
-      message = spinnerFrames[spinnerIndex];
-      bg = COLORS.loading;
+      message = SPINNER_FRAMES[spinnerIndex] ?? 'Loading';
     } else if (view.noEarlierImagery) {
       message = 'No earlier imagery here';
-      bg = COLORS.info;
+      fill = 'notice';
     }
-    setVisible('status', message !== null);
-    if (message !== null) {
-      text('status', 'status-text')?.setProperties({ text: message });
-      box('status', 'status-root')?.setProperties({ backgroundColor: bg });
-    }
-  };
-
-  let chips: ReturnType<typeof yearChips> = [];
-  const refreshYearList = (): void => {
-    chips = yearChips({ state: state.get(), yearsKnown });
-    for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
-      const chip = chips[i];
-      const root = box('year', `year-chip-${i}`);
-      root?.setProperties({
-        display: chip ? 'flex' : 'none',
-        backgroundColor: !chip ? COLORS.chip : chip.selected ? COLORS.chipSelected : chip.isPresent ? COLORS.chipPresent : COLORS.chip,
-      });
-      if (chip) {
-        text('year', `year-chip-label-${i}`)?.setProperties({
-          text: String(chip.year),
-          color: chip.selected ? '#ffffff' : '#ffffffcc',
-        });
-      }
-    }
-  };
-
-  // Room panel: places near the map's current view that have past imagery. Click a row to enter.
-  let places: NearbyPlace[] = [];
-  let placesCentre: LatLng | null = null;
-  let placesZoom: number | null = null;
-  let placesLoading = false;
-  let placesDotFrame = 1;
-  let placesDotTimer: ReturnType<typeof setInterval> | null = null;
-  let placesToken = 0;
-  let placesPageIndex = 0;
-  let placesView: PlacesPage = placesPage(places, null, 0);
-  const refreshPlaces = (): void => {
-    // Animate the "LOOKING NEARBY..." dots only while a lookup is running.
-    if (placesLoading && placesDotTimer === null) {
-      placesDotTimer = setInterval(() => {
-        placesDotFrame = (placesDotFrame % 3) + 1;
-        refreshPlaces();
-      }, 400);
-    } else if (!placesLoading && placesDotTimer !== null) {
-      clearInterval(placesDotTimer);
-      placesDotTimer = null;
-      placesDotFrame = 1;
-    }
-    const mode = state.get().mode;
-    const showPlaces = showPlacesPanel(mode, places.length, placesLoading);
-    setVisible('places', showPlaces);
-    setVisible('map', showMapButton(mode));
-    if (!showPlaces) return;
-    placesView = placesPage(places, placesCentre, placesPageIndex);
-    placesPageIndex = placesView.page;
-    text('places', 'places-title')?.setProperties({ text: placesTitle(placesZoom, placesLoading, places.length, placesDotFrame) });
-    for (let i = 0; i < PLACES_PER_PAGE; i++) {
-      const row = placesView.rows[i];
-      box('places', `place-row-${i}`)?.setProperties({ display: row ? 'flex' : 'none' });
-      if (row) {
-        text('places', `place-name-${i}`)?.setProperties({ text: row.name });
-        text('places', `place-years-${i}`)?.setProperties({ text: row.yearsText });
-      }
-    }
-    text('places', 'places-page')?.setProperties({ text: placesView.pageText });
-  };
-
-  // Places list: rooms look around the map view; street with a live pano looks around the player.
-  // Trims by the lookup kind (street sets no zoom), not the current mode, so a lookup that
-  // finishes during the table→street transition still loses the spot-the-player-stands-on row.
-  const streetTrim = (list: NearbyPlace[]): NearbyPlace[] => {
-    const s = state.get();
-    if (!s.pano || placesZoom !== null || s.mode === 'portal') return list;
-    return usablePlaces(list, { centre: s.pano, minOffsetM: STREET_PLACE_MIN_OFFSET_M });
-  };
-
-  /** Look up places around a point; `zoom` is null in street (no map zoom applies). */
-  const loadPlaces = async (lat: number, lng: number, zoom: number | null): Promise<void> => {
-    const token = ++placesToken;
-    placesCentre = { lat, lng };
-    placesZoom = zoom;
-    if (zoom !== null && zoom < PLACES_MIN_ZOOM) {
-      places = [];
-      placesLoading = false;
-      placesPageIndex = 0;
-      refreshPlaces();
-      return;
-    }
-    placesLoading = true;
-    refreshPlaces();
-    try {
-      const found = await ctx.services.source.placesNear(lat, lng, (partial) => {
-        if (token !== placesToken || disposed) return;
-        places = streetTrim(usablePlaces(partial));
-        placesPageIndex = 0;
-        refreshPlaces();
-      });
-      if (token !== placesToken || disposed) return;
-      places = streetTrim(usablePlaces(found));
-      placesPageIndex = 0;
-    } catch (err) {
-      if (token !== placesToken || disposed) return;
-      places = [];
-      bus.emit('error', { source: 'ui', message: `Could not look up places: ${String(err)}`, recoverable: true });
-    }
-    placesLoading = false;
-    refreshPlaces();
-  };
-
-  // Room search: type on the panel keyboard or speak, ENTER looks the text up, OK flies the map there.
-  const voice = createVoiceInput();
-  let query = '';
-  let found: PlaceResult[] = [];
-  let picked = -1;
-  let searchNote = 'Pick a place name, then ENTER.';
-  let searchCollapsed = false;
-  let searchToken = 0;
-  let searchAbort: AbortController | null = null;
-  const refreshSearch = (): void => {
-    setVisible('search', showSearchPanel(state.get().mode));
-    box('search', 'search-content')?.setProperties({ display: searchCollapsed ? 'none' : 'flex' });
-    const shown = displayText(query, !voice.listening);
-    text('search', 'search-text')?.setProperties({
-      text: voice.listening && query.length === 0 ? 'Listening…' : shown.text,
-      color: shown.placeholder && !voice.listening ? '#ffffff80' : '#ffffff',
-    });
-    text('search', 'search-status')?.setProperties({ text: searchNote });
-    box('search', 'search-mic-icon')?.setProperties({ display: voice.listening ? 'none' : 'flex' });
-    box('search', 'search-mic-stop')?.setProperties({ display: voice.listening ? 'flex' : 'none' });
-    box('search', 'search-mic')?.setProperties({
-      backgroundColor: !voice.supported ? COLORS.timeDisabled : voice.listening ? COLORS.timeBackToNow : COLORS.timeOn,
-    });
-    box('search', 'search-enter')?.setProperties({
-      backgroundColor: canSearch(query) ? COLORS.timeOn : COLORS.timeDisabled,
-    });
-    box('search', 'search-use')?.setProperties({
-      backgroundColor: picked >= 0 ? '#2ee6d659' : COLORS.timeDisabled,
-    });
-    for (let i = 0; i < SEARCH_RESULTS; i++) {
-      const r = found[i];
-      box('search', `search-row-${i}`)?.setProperties({
-        display: r ? 'flex' : 'none',
-        backgroundColor: i === picked ? COLORS.chipSelected : COLORS.chip,
-      });
-      if (r) text('search', `search-row-label-${i}`)?.setProperties({ text: resultLabel(r.label) });
-    }
-  };
-  const runSearch = async (): Promise<void> => {
-    if (!canSearch(query)) {
-      searchNote = 'Type at least 3 letters.';
-      refreshSearch();
-      return;
-    }
-    const mine = ++searchToken;
-    searchAbort?.abort();
-    searchAbort = new AbortController();
-    searchNote = 'Searching…';
-    refreshSearch();
-    try {
-      const list = await searchPlaces(query, { signal: searchAbort.signal, limit: SEARCH_RESULTS });
-      if (mine !== searchToken || disposed) return;
-      found = list;
-      picked = list.length > 0 ? 0 : -1;
-      searchNote = list.length > 0 ? 'Tap a result, then OK.' : `No places found for "${query}".`;
-    } catch (err) {
-      if (mine !== searchToken || disposed || (err as { name?: string }).name === 'AbortError') return;
-      found = [];
-      picked = -1;
-      searchNote = 'Search failed. Check the connection.';
-    }
-    refreshSearch();
-  };
-  const clearSearch = (): void => {
-    voice.stop();
-    searchToken++;
-    searchAbort?.abort();
-    query = '';
-    found = [];
-    picked = -1;
-    searchNote = 'Pick a place name, then ENTER.';
-    refreshSearch();
-  };
-  const toggleSearchVisibility = (): void => {
-    searchCollapsed = !searchCollapsed;
-    refreshSearch();
-  };
-  const useResult = (): void => {
-    const r = found[picked];
-    if (!r) {
-      searchNote = 'Search, then tap a result.';
-      refreshSearch();
-      return;
-    }
-    bus.emit('map:flyRequested', { lat: r.lat, lng: r.lng, zoom: SEARCH_ZOOM, label: r.label });
-    searchNote = `Showing ${resultLabel(r.label).split(',')[0]} on the table.`;
-    refreshSearch();
-  };
-  const toggleMic = (): void => {
-    if (!voice.supported) {
-      searchNote = 'Speech is not available here. Use the keys.';
-      refreshSearch();
-      return;
-    }
-    if (voice.listening) {
-      voice.stop();
-      return;
-    }
-    searchNote = 'Speak now…';
-    voice.start({
-      onText: (heard, final) => {
-        query = cleanSpoken(heard);
-        refreshSearch();
-        if (final) void runSearch();
-      },
-      onEnd: (error) => {
-        if (error) searchNote = error;
-        refreshSearch();
-      },
-    });
-    refreshSearch();
-  };
-
-  const refreshHud = (): void => {
-    refreshPlaces();
-    refreshSearch();
-    const view = deriveHud({ state: state.get(), yearsKnown });
-    setVisible('time', view.showTimeButton);
-    setVisible('year', view.showYear);
-    setVisible('portal', view.showPortalButton);
-    text('time', 'time-btn-label')?.setProperties({
-      text: view.timeButtonLabel,
-      color: view.timeButtonEnabled ? '#ffffff' : COLORS.textDisabled,
-    });
-    box('time', 'time-btn')?.setProperties({
-      backgroundColor: !view.timeButtonEnabled
-        ? COLORS.timeDisabled
-        : view.timeButtonLabel === 'BACK TO NOW'
-          ? COLORS.timeBackToNow
-          : COLORS.timeOn,
-    });
-    text('year', 'year-text')?.setProperties({ text: view.yearText });
-    box('year', 'year-root')?.setProperties({
-      backgroundColor: view.yearIsPast ? COLORS.yearPast : COLORS.yearNow,
-    });
-    text('portal', 'portal-btn-label')?.setProperties({ text: view.portalButtonLabel });
-    refreshYearList();
-    refreshStatus();
-  };
+    host.setVisible('status', message !== null);
+    if (message === null) return;
+    const el = host.text('status', 'status-text');
+    el?.setProperties({ text: message });
+    paintText(el, 'primary');
+    paintBox(host.el('status', 'status-root'), fill);
+  }
 
   const updateSpinner = (): void => {
     if (busy.busy && spinnerTimer === null) {
       spinnerTimer = setInterval(() => {
-        spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+        spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
         refreshStatus();
       }, 350);
     } else if (!busy.busy && spinnerTimer !== null) {
@@ -421,125 +227,34 @@ export const createTrack: TrackFactory = async (ctx) => {
     }
   };
 
-  // ---------------------------------------------------------------------------------------
-  // Create the HUD panels (persistent app content, not level content)
-  // ---------------------------------------------------------------------------------------
-  for (const slot of Object.keys(ASSET_IDS) as HudSlot[]) {
-    const asset = await world.assets.instantiate<UIKitMLAsset>(ASSET_IDS[slot]);
-    asset.name = `hud-${slot}`;
-    const entity = world.createTransformEntity(asset, { persistent: true });
-    entity.addComponent(HudTag, { slot });
-    if (['time', 'portal', 'info', 'year', 'places', 'map', 'search'].includes(slot)) entity.addComponent(RayInteractable);
-    asset.visible = slot === 'info';
-    panels.set(slot, { entity, asset, object: asset });
-  }
+  const bar = createStreetBar(host, () => yearsKnown);
+  const places = createPlacesPanel(host);
+  const search = createSearchPanel(host);
+  const settings = createSettingsPanel(host);
+  const modules: PanelModule[] = [bar, places, search, settings];
 
-  // Controls: UIKit elements receive pointer clicks from both XR rays and desktop canvas events.
-  const onTimeClick = (): void => {
-    const view = deriveHud({ state: state.get(), yearsKnown });
-    if (!view.timeButtonEnabled) return;
-    bus.emit('time:toggled', { on: !state.get().timeOn });
-  };
-  const onPortalClick = (): void => {
-    bus.emit('mode:requested', { mode: deriveHud({ state: state.get(), yearsKnown }).portalTarget });
-  };
-  const onChipClick = (i: number): void => {
-    const chip = chips[i];
-    if (!chip) return;
-    const action = yearChipAction(chip, state.get().timeOn);
-    if (action.kind === 'toggleOff') {
-      if (state.get().timeOn) bus.emit('time:toggled', { on: false });
-      return;
-    }
-    if (action.openLens) bus.emit('time:toggled', { on: true });
-    bus.emit('time:yearRequested', { year: action.year });
-  };
-  for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
-    const el = box('year', `year-chip-${i}`);
-    const handler = (): void => onChipClick(i);
-    el?.addEventListener('click', handler);
-    offs.push(() => el?.removeEventListener('click', handler));
-  }
-  const listen = (el: ReturnType<typeof box>, handler: () => void): void => {
-    el?.addEventListener('click', handler);
-    offs.push(() => el?.removeEventListener('click', handler));
-  };
-  for (let i = 0; i < PLACES_PER_PAGE; i++) {
-    listen(box('places', `place-row-${i}`), () => {
-      const row = placesView.rows[i];
-      const place = row ? places[row.index] : undefined;
-      if (place) bus.emit('spot:selected', { lat: place.lat, lng: place.lng, label: row?.name });
-    });
-  }
-  const turnPage = (delta: number): void => {
-    placesPageIndex = (placesView.page + delta + placesView.pageCount) % placesView.pageCount;
-    refreshPlaces();
-  };
-  listen(box('places', 'places-prev'), () => turnPage(-1));
-  listen(box('places', 'places-next'), () => turnPage(1));
-  for (const key of [...KEY_IDS, 'SPACE']) {
-    const id = key === 'SPACE' ? 'search-space' : `search-key-${key}`;
-    listen(box('search', id), () => {
-      query = applyKey(query, key);
-      refreshSearch();
-    });
-  }
-  for (let i = 0; i < SEARCH_RESULTS; i++) {
-    listen(box('search', `search-row-${i}`), () => {
-      if (!found[i]) return;
-      picked = i;
-      refreshSearch();
-    });
-  }
-  listen(box('search', 'search-enter'), () => void runSearch());
-  listen(box('search', 'search-clear'), clearSearch);
-  listen(box('search', 'search-use'), useResult);
-  listen(box('search', 'search-visibility'), toggleSearchVisibility);
-  listen(box('search', 'search-mic'), toggleMic);
-  listen(box('map', 'map-btn'), () => bus.emit('mode:requested', { mode: 'table' }));
-  const timeBtn = box('time', 'time-btn');
-  const portalBtn = box('portal', 'portal-btn');
-  timeBtn?.addEventListener('click', onTimeClick);
-  portalBtn?.addEventListener('click', onPortalClick);
-  const onInfoClick = (): void => {
-    const panel = panels.get('credits');
-    if (!panel) return;
-    panel.object.visible = !panel.object.visible;
+  const refreshHud = (): void => {
+    for (const m of modules) m.refresh();
     refreshCredits();
+    refreshStatus();
   };
-  const infoBtn = box('info', 'info-btn');
-  infoBtn?.addEventListener('click', onInfoClick);
-  offs.push(
-    () => timeBtn?.removeEventListener('click', onTimeClick),
-    () => portalBtn?.removeEventListener('click', onPortalClick),
-    () => infoBtn?.removeEventListener('click', onInfoClick),
-  );
 
   // ---------------------------------------------------------------------------------------
   // Events
   // ---------------------------------------------------------------------------------------
   offs.push(
-    bus.on('map:viewChanged', ({ lat, lng, zoom }) => void loadPlaces(lat, lng, zoom)),
+    onThemeChange(repaintAll),
+    bus.on('prefs:changed', () => settings.refresh()),
+    bus.on('map:viewChanged', ({ lat, lng, zoom }) => void places.load(lat, lng, zoom)),
     bus.on('spot:selected', () => {
       yearsKnown = false;
       photos = [];
       toasts.clear();
-      refreshCredits();
       refreshHud();
     }),
     bus.on('pano:shown', () => {
-      refreshCredits();
       refreshHud();
-      // In street, the panel follows the player's spot; a same-spot time hop keeps the list.
-      const s = state.get();
-      if (s.mode !== 'street' || !s.pano) return;
-      const c = placesCentre;
-      const moved = !c || Math.abs(c.lat - s.pano.lat) > 0.0001 || Math.abs(c.lng - s.pano.lng) > 0.0001;
-      if (!moved) return;
-      places = [];
-      placesPageIndex = 0;
-      placesZoom = null;
-      void loadPlaces(s.pano.lat, s.pano.lng, null);
+      places.followPano();
     }),
     bus.on('time:yearsKnown', () => {
       yearsKnown = true;
@@ -547,10 +262,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     }),
     bus.on('time:toggled', refreshHud),
     bus.on('time:yearChanged', refreshHud),
-    bus.on('time:committed', () => {
-      refreshCredits();
-      refreshHud();
-    }),
+    bus.on('time:committed', refreshHud),
     bus.on('archive:visible', ({ photos: visible }) => {
       photos = visible;
       refreshCredits();
@@ -570,19 +282,28 @@ export const createTrack: TrackFactory = async (ctx) => {
     }),
   );
 
-  // Recentre when an immersive session starts (the head moves to a new origin) and on KeyC
-  // (a deliberate desktop recentre). Both are hard snaps.
+  // The world origin moves when an immersive session starts or ends, so dragged positions no
+  // longer mean anything: forget them and recentre. KeyC is the deliberate desktop recentre.
+  // All of these are hard snaps.
   const xr = world.renderer.xr;
-  const onSessionStart = (): void => scheduleRecentre(RECENTRE_AFTER_XR_MS);
-  xr.addEventListener('sessionstart', onSessionStart);
-  offs.push(() => xr.removeEventListener('sessionstart', onSessionStart));
+  const onSessionChange = (): void => {
+    resetPlacements();
+    scheduleRecentre(RECENTRE_AFTER_XR_MS);
+  };
+  xr.addEventListener('sessionstart', onSessionChange);
+  xr.addEventListener('sessionend', onSessionChange);
+  offs.push(
+    () => xr.removeEventListener('sessionstart', onSessionChange),
+    () => xr.removeEventListener('sessionend', onSessionChange),
+  );
   const onKey = (event: KeyboardEvent): void => {
-    if (event.code === 'KeyC' && !event.repeat && !event.ctrlKey && !event.metaKey) recentre();
+    if (event.code !== 'KeyC' || event.repeat || event.ctrlKey || event.metaKey) return;
+    resetPlacements();
+    recentre();
   };
   window.addEventListener('keydown', onKey);
   offs.push(() => window.removeEventListener('keydown', onKey));
 
-  refreshCredits();
   refreshHud();
   recentre();
   scheduleRecentre(300); // the camera pose is only trustworthy after the first frame
@@ -592,18 +313,20 @@ export const createTrack: TrackFactory = async (ctx) => {
     recentre,
     dispose() {
       disposed = true;
-      voice.stop();
-      searchAbort?.abort();
+      for (const m of modules) m.dispose?.();
       offs.forEach((off) => off());
       toasts.dispose();
       if (spinnerTimer !== null) clearInterval(spinnerTimer);
-      if (placesDotTimer !== null) clearInterval(placesDotTimer);
       if (recentreTimer !== null) clearTimeout(recentreTimer);
-      for (const { entity, asset } of panels.values()) {
+      for (const t of gripTimers.values()) clearTimeout(t);
+      gripTimers.clear();
+      for (const { entity, asset, rig } of panels.values()) {
         asset.dispose();
         entity.dispose();
+        rig?.dispose();
       }
       panels.clear();
+      forgetStyles();
     },
   };
   return track;
