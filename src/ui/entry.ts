@@ -46,6 +46,8 @@ interface Panel {
 const RECENTRE_AFTER_XR_MS = 700;
 /** UIKit lays a panel out a few frames after a change; measure for the grip after this. */
 const GRIP_SETTLE_MS = 150;
+/** How long the grip stays visible after the pointer leaves its panel. */
+const GRIP_HIDE_DELAY_MS = 1500;
 /** Gap between a panel's top edge and its grip, metres. */
 const GRIP_GAP_M = 0.03;
 /** Buffer spinner: arc sweep and spin rate, rad/s. */
@@ -125,7 +127,7 @@ export const createTrack: TrackFactory = async (ctx) => {
         hideTimer = setTimeout(() => {
           hideTimer = null;
           rig.grip.visible = false;
-        }, 250);
+        }, GRIP_HIDE_DELAY_MS);
       };
       type Target = { addEventListener(t: string, f: () => void): void; removeEventListener(t: string, f: () => void): void };
       for (const target of [asset, rig.root] as unknown as Target[]) {

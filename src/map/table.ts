@@ -490,7 +490,9 @@ export class TableMap implements MapTable {
     const spot: SpotInfo = { lat: ll.lat, lng: ll.lng };
     this.markPick(spot.lat, spot.lng);
     this.log('pick', { px, py, snappedPx: [Math.round(x), Math.round(y)], spot });
-    this.bus.emit('spot:selected', spot);
+    // Never auto-spawn: the pin is dropped and the map recentres, which reloads the Nearby list
+    // (map:viewChanged). The player picks a row there, or the landing card's button, to go in.
+    this.flyTo(spot.lat, spot.lng);
     return spot;
   }
 

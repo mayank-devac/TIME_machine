@@ -47,6 +47,7 @@ export function createSearchPanel(host: Host): PanelModule {
       folded ? 'chevron-down' : 'chevron-up',
       'ghost',
     );
+    paintIconButton(host.el('search', 'search-random'), host.el('search', 'search-random-icon'), 'dice', 'ghost');
     host.el('search', 'search-content')?.setProperties({ display: folded ? 'none' : 'flex' });
 
     const shown = displayText(query, !voice.listening);
@@ -184,6 +185,12 @@ export function createSearchPanel(host: Host): PanelModule {
   host.control(host.el('search', 'search-enter'), 'primary', () => void runSearch());
   host.control(host.el('search', 'search-clear'), 'default', clear);
   host.control(host.el('search', 'search-mic'), 'default', toggleMic);
+  host.control(host.el('search', 'search-random'), 'default', () => {
+    const spots = host.ctx.services.source.spots();
+    const spot = spots[Math.floor(Math.random() * spots.length)];
+    if (!spot) return;
+    bus.emit('spot:selected', { lat: spot.lat, lng: spot.lng, label: spot.name });
+  });
   host.control(host.el('search', 'search-fold'), 'default', () => {
     folded = !folded;
     refresh();

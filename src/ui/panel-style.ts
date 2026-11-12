@@ -178,7 +178,8 @@ export type IconName =
   | 'history'
   | 'mic'
   | 'stop'
-  | 'info';
+  | 'info'
+  | 'dice';
 
 const iconUrl = (name: IconName): string => `${import.meta.env.BASE_URL}assets/icons/${name}.svg`;
 const icons = new Map<El, { name: IconName; ink: Ink }>();

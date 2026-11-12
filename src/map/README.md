@@ -16,7 +16,8 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
   mouse, controller rays (trigger) and hand rays (pinch) share one code path:
   - one pointer pressed and moved: pan (the map follows the pointer);
   - press and release in place (≤ 1 % of the canvas, ≤ 700 ms): pick. The pick snaps to the
-    nearest teal line within 48 canvas px and emits `spot:selected`; a miss emits a
+    nearest teal line within 48 canvas px, drops the pin and recentres the map (the Nearby list
+    reloads; no street view until the player picks a row); a miss emits a
     recoverable `error` ("No 360° imagery there. Tap a glowing street.");
   - two pointers pressed: spread to zoom (double the spread = +1 zoom), midpoint pans;
   - mouse wheel: zoom around the pointer; right thumbstick up/down: zoom.
