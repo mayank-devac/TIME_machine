@@ -38,7 +38,7 @@ describe('year ladder', () => {
   });
 
   it('words the limit message', () => {
-    expect(limitMessage('earlier', 2020)).toBe('No earlier imagery here. Earliest is 2020.');
+    expect(limitMessage('earlier', 2020)).toBe('Some years street Unavailable . Earliest is 2020.');
     expect(limitMessage('later', 2023)).toBe('No later imagery here. Latest is 2023.');
   });
 

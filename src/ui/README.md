@@ -7,7 +7,7 @@ Nine world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), cr
 | Slot | Manifest id | Shown when |
 | --- | --- | --- |
 | credits | `hud-credits` | always |
-| status | `hud-status` | a toast, loading, or "No earlier imagery here" is active |
+| status | `hud-status` | a toast, loading, or "Some years street Unavailable " is active |
 | time | `hud-time-button` | mode `street` or `portal`; greyed unless years >= 2 |
 | year | `hud-year-label` | mode `street` or `portal`; present year (glass pill) with the clickable year chips under it, no backing panel |
 | portal | `hud-portal-button` | mode `street` (PORTAL) or `portal` (BACK) |
@@ -16,7 +16,7 @@ Nine world-space UIKitML panels (`public/ui/*.uikitml`, kit `horizon`, dark), cr
 | map | `hud-map-button` | mode `street` or `portal`; requests the table |
 | info | `hud-info-button` | toggles the info card (visible at start) |
 
-Status priority: error toast, then loading spinner, then "No earlier imagery here".
+Status priority: error toast, then loading spinner, then "Some years street Unavailable ".
 
 ## Events
 Emits `time:toggled {on}` (TIME MACHINE button, ignored while disabled) and

@@ -110,6 +110,34 @@ export const createTrack: TrackFactory = async (ctx) => {
     if (spec.interactive) entity.addComponent(RayInteractable);
     // Pressing a control on the panel must never start a drag; only the grip does.
     if (rig) stopBubbling(asset);
+    if (rig) {
+      // The grip shows only while the ray is over the panel or the grip itself. A short hide
+      // delay lets the ray cross the gap between the two without the grip flickering.
+      rig.grip.visible = false;
+      let hideTimer: ReturnType<typeof setTimeout> | null = null;
+      const show = (): void => {
+        if (hideTimer !== null) clearTimeout(hideTimer);
+        hideTimer = null;
+        rig.grip.visible = true;
+      };
+      const hide = (): void => {
+        if (hideTimer !== null) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          hideTimer = null;
+          rig.grip.visible = false;
+        }, 250);
+      };
+      type Target = { addEventListener(t: string, f: () => void): void; removeEventListener(t: string, f: () => void): void };
+      for (const target of [asset, rig.root] as unknown as Target[]) {
+        target.addEventListener('pointerenter', show);
+        target.addEventListener('pointerleave', hide);
+        offs.push(() => {
+          target.removeEventListener('pointerenter', show);
+          target.removeEventListener('pointerleave', hide);
+          if (hideTimer !== null) clearTimeout(hideTimer);
+        });
+      }
+    }
     const node = rig ? rig.root : asset;
     node.visible = false;
     panels.set(slot, { entity, asset, rig, node });
@@ -261,7 +289,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       // Buffering shows the rotating arc alone, like a video player's spinner.
       spinnerOnly = true;
     } else if (view.noEarlierImagery) {
-      message = 'No earlier imagery here';
+      message = 'Some years street Unavailable ';
       fill = 'notice';
     }
     host.setVisible('status', message !== null || spinnerOnly);

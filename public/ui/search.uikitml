@@ -76,14 +76,14 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 1;
+    gap: 0.8;
   }
   .key {
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    width: 5.4;
+    width: 5;
     height: 6.4;
     border-width: 0.3;
     border-radius: 2;
@@ -93,7 +93,7 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    width: 34;
+    width: 40;
     height: 8;
     padding-left: 3;
     border-width: 0.3;
@@ -106,33 +106,39 @@
     justify-content: space-between;
     width: 58;
   }
-.icon {
+.result {
+    width: 50;
+    font-size: 3;
+    font-weight: medium;
+    text-align: left;
+  }
+  .icon {
     width: 4;
     height: 4;
   }
 </style>
 <div id="search-root" class="panel" style="width: 64;">
   <div class="header" style="width: 58;">
-    <span id="search-title" class="title">SEARCH A PLACE</span>
+    <span id="search-title" class="title">SEARCH PLACE</span>
     <div id="search-fold" class="fold"><svg id="search-fold-icon" class="icon"></svg></div>
   </div>
   <div id="search-content" class="content">
     <div class="line">
       <div id="search-box" class="input"><span id="search-text" class="small">Type or speak a place</span></div>
-      <div id="search-mic" class="btn" style="width: 12;"><svg id="search-mic-icon" class="icon"></svg></div>
-      <div id="search-clear" class="btn" style="width: 9;"><svg id="search-clear-icon" class="icon"></svg></div>
+      <div id="search-mic" class="btn" style="width: 8;"><svg id="search-mic-icon" class="icon"></svg></div>
+      <div id="search-clear" class="btn" style="width: 8;"><svg id="search-clear-icon" class="icon"></svg></div>
     </div>
-    <span id="search-status" class="small">Type a place name, then SEARCH.</span>
-    <div id="search-row-0" class="row" style="width: 58; justify-content: flex-start;">
-      <span id="search-row-label-0" class="label">Result</span>
+    <span id="search-status" class="small" style="width: 58; text-align: left;">Type a place name, then SEARCH.</span>
+    <div id="search-row-0" class="row" style="width: 58;">
+      <span id="search-row-label-0" class="result">Result</span>
     </div>
-    <div id="search-row-1" class="row" style="width: 58; justify-content: flex-start;">
-      <span id="search-row-label-1" class="label">Result</span>
+    <div id="search-row-1" class="row" style="width: 58;">
+      <span id="search-row-label-1" class="result">Result</span>
     </div>
-    <div id="search-row-2" class="row" style="width: 58; justify-content: flex-start;">
-      <span id="search-row-label-2" class="label">Result</span>
+    <div id="search-row-2" class="row" style="width: 58;">
+      <span id="search-row-label-2" class="result">Result</span>
     </div>
-    <div class="content" style="gap: 1;">
+    <div class="content" style="gap: 0.8; width: 58;">
       <div class="keys">
         <div id="search-key-Q" class="key"><span id="search-key-label-Q" class="label">Q</span></div>
         <div id="search-key-W" class="key"><span id="search-key-label-W" class="label">W</span></div>
@@ -164,12 +170,12 @@
         <div id="search-key-B" class="key"><span id="search-key-label-B" class="label">B</span></div>
         <div id="search-key-N" class="key"><span id="search-key-label-N" class="label">N</span></div>
         <div id="search-key-M" class="key"><span id="search-key-label-M" class="label">M</span></div>
-        <div id="search-key-BACK" class="key" style="width: 11;"><svg id="search-key-icon-BACK" class="icon"></svg></div>
+        <div id="search-key-BACK" class="key" style="width: 10.6;"><svg id="search-key-icon-BACK" class="icon"></svg></div>
       </div>
     </div>
     <div class="line">
-      <div id="search-space" class="btn" style="width: 34;"><svg id="search-space-icon" class="icon"></svg></div>
-      <div id="search-enter" class="btn" style="width: 22;"><svg id="search-enter-icon" class="icon"></svg></div>
+      <div id="search-space" class="btn" style="width: 40;"><svg id="search-space-icon" class="icon"></svg></div>
+      <div id="search-enter" class="btn" style="width: 17;"><svg id="search-enter-icon" class="icon"></svg></div>
     </div>
   </div>
 </div>

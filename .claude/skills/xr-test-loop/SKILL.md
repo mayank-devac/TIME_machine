@@ -71,7 +71,7 @@ A screenshot proves how one frame looked. Behaviour over time needs a state chec
 | Push-through | Afterwards the whole view is the past year and only two panorama textures exist. |
 | Archive windows | Below the earliest year, framed photos appear, each with a year and a credit. |
 | Portal | In AR mode the emulator room is visible around a window showing the street; stepping through fills the view. |
-| Empty state | A spot with one year shows "no earlier imagery here", and no lens. |
+| Empty state | A spot with one year shows "Some years street Unavailable ", and no lens. |
 | Credits | Visible in every screenshot above. |
 
 Also run the same checks in plain desktop mode (no XR session): drag to look, lens on the mouse.

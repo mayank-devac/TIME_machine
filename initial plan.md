@@ -148,7 +148,7 @@ This avoids switching sessions. Fall back to a VR session if AR is refused.
 | D Map table | `src/map/` | MapLibre + OpenFreeMap into a canvas texture on a table surface; pinch-drag pan, two-hand zoom; Mapillary coverage layer (panoramas only); pinch a street → `spot:selected`; 2D landing page search with Photon and the curated list | opus |
 | E Portal | `src/portal/` | Framed window placed in the room showing the street through a stencil mask; grab to move; step or push through to enter the street; exit returns to the room | opus |
 | F Archive | `src/archive/` | Wikimedia Commons geosearch for old photos near the spot; floating framed photos with year and credit, shown when the dial goes below the earliest Mapillary year | sonnet |
-| G UI | `src/ui/` and `ui/` | TIME MACHINE button, large year label, persistent credit line (Mapillary, OpenStreetMap, photo creator), loading state, "no earlier imagery here" state, error toasts | sonnet |
+| G UI | `src/ui/` and `ui/` | TIME MACHINE button, large year label, persistent credit line (Mapillary, OpenStreetMap, photo creator), loading state, "Some years street Unavailable " state, error toasts | sonnet |
 
 Each track finishes with: `npm run build` and `npm test` passing, a screenshot from the
 emulator showing its feature against mocks, and a short `README.md` in its folder.
@@ -177,7 +177,7 @@ emulator showing its feature against mocks, and a short `README.md` in its folde
   6. Push through: the past year becomes the whole view.
   7. Dial below the earliest year: archive photo windows appear with credits.
   8. Switch to portal mode: window in the room shows the street; step through.
-  9. A spot with one year only shows "no earlier imagery here".
+  9. A spot with one year only shows "Some years street Unavailable ".
   10. Credit line is visible in every state.
 - Desktop mode: the same pass with mouse drag and mouse-following lens.
 - Memory check: after 20 hops, texture count in `renderer.info` has not grown.

@@ -40,6 +40,10 @@ export class DialVisual {
     later: null,
     archive: false,
   };
+  /** Full dial (ring, ticks, bead) versus the year label alone. */
+  private full = true;
+  /** Year shown by the label-only mode. */
+  private labelYear: number | null = null;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -81,6 +85,20 @@ export class DialVisual {
     const t = currentTokens();
     const c = PX / 2;
     g.clearRect(0, 0, PX, PX);
+    if (!this.full) {
+      // Year label only: a soft glass pill behind the number so it reads on any street.
+      g.fillStyle = t.background;
+      g.beginPath();
+      g.roundRect(c - 92, c - 40, 184, 72, 36);
+      g.fill();
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = t.textPrimary;
+      g.font = '600 62px system-ui, sans-serif';
+      g.fillText(this.labelYear === null ? '----' : String(this.labelYear), c, c - 4);
+      this.texture.needsUpdate = true;
+      return;
+    }
     g.beginPath();
     g.arc(c, c, c - 6, 0, Math.PI * 2);
     g.fillStyle = t.background;
@@ -114,6 +132,15 @@ export class DialVisual {
 
   hide(): void {
     this.mesh.visible = false;
+  }
+
+  /** Switch between the full dial and the year label alone; repaints only on change. */
+  setMode(full: boolean, year: number | null): void {
+    if (full === this.full && (full || year === this.labelYear)) return;
+    this.full = full;
+    this.labelYear = year;
+    this.bead.visible = full;
+    this.paint(this.shown.year, this.shown.earlier, this.shown.later, this.shown.archive);
   }
 
   /**

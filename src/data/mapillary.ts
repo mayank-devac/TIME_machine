@@ -167,6 +167,8 @@ export class MapillaryClient implements PanoSource {
   private readonly density = new Map<string, Density>();
   /** Boxes Mapillary refused as too dense; they are split without asking again. */
   private readonly denseBoxes = new Set<string>();
+  /** Every panorama the Nearby scan has seen, by id; `yearsAt` merges these in. */
+  private readonly placesSeen = new Map<string, Pano>();
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly cache = new Map<string, Promise<unknown>>();
 
@@ -300,16 +302,17 @@ export class MapillaryClient implements PanoSource {
       let raw = 0;
       let failures = 0;
       let lastErr: unknown = err;
-      for (const q of quads) {
-        try {
-          const r = await this.searchBox(q, params, depth + 1);
-          raw = Math.max(raw, r.raw); // saturated only if one quadrant alone hit the limit
-          for (const p of r.panos) seen.set(p.id, p);
-        } catch (qErr) {
+      // Quadrants go out together (the gate still spaces their starts) instead of one by one.
+      const results = await Promise.allSettled(quads.map((q) => this.searchBox(q, params, depth + 1)));
+      for (const res of results) {
+        if (res.status === 'fulfilled') {
+          raw = Math.max(raw, res.value.raw); // saturated only if one quadrant alone hit the limit
+          for (const p of res.value.panos) seen.set(p.id, p);
+        } else {
           // A throttle must stop everything; any other failed quadrant just loses its own panos.
-          if (qErr instanceof ThrottledError) throw qErr;
+          if (res.reason instanceof ThrottledError) throw res.reason;
           failures++;
-          lastErr = qErr;
+          lastErr = res.reason;
         }
       }
       if (failures === quads.length) throw lastErr;
@@ -333,26 +336,32 @@ export class MapillaryClient implements PanoSource {
     return this.cached(key, async () => {
       const here = { lat, lng };
       const radius = Math.min(config.searchRadiusM, Math.ceil(this.maxOffset));
-      const first = await this.search({ lat, lng, radius, limit: SEARCH_LIMIT });
+      // Panoramas only: flat photos would fill the cap and push real pano years out.
+      const first = await this.search({ lat, lng, radius, is_pano: 'true', limit: SEARCH_LIMIT });
       let all = first.panos;
       if (first.raw >= SEARCH_LIMIT) {
         // Saturated: paging does not work, so ask once per year band.
         const thisYear = new Date().getUTCFullYear();
-        const bands: Pano[] = [];
-        for (let y = FIRST_YEAR; y <= thisYear; y++) {
-          const r = await this.search({
-            lat,
-            lng,
-            radius,
-            limit: SEARCH_LIMIT,
-            start_captured_at: isoStart(y),
-            end_captured_at: isoEnd(y),
-          });
-          bands.push(...r.panos);
-        }
-        all = bands;
+        const years: number[] = [];
+        for (let y = FIRST_YEAR; y <= thisYear; y++) years.push(y);
+        const results = await Promise.all(
+          years.map((y) =>
+            this.search({
+              lat,
+              lng,
+              radius,
+              is_pano: 'true',
+              limit: SEARCH_LIMIT,
+              start_captured_at: isoStart(y),
+              end_captured_at: isoEnd(y),
+            }),
+          ),
+        );
+        all = results.flatMap((r) => r.panos);
       }
-      return nearestPerYear(all, here, this.maxOffset);
+      // Also count panoramas the Nearby scan already found, so a year that list showed
+      // is always offered here too.
+      return nearestPerYear([...all, ...this.placesSeen.values()], here, this.maxOffset);
     });
   }
 
@@ -367,7 +376,11 @@ export class MapillaryClient implements PanoSource {
       const tiles = placesTiles({ lat: cLat, lng: cLng });
       const seen = new Map<string, Pano>();
       let sentCount = 0;
-      const add = (panos: Pano[]): void => panos.forEach((p) => seen.set(p.id, p));
+      const add = (panos: Pano[]): void =>
+        panos.forEach((p) => {
+          seen.set(p.id, p);
+          this.placesSeen.set(p.id, p);
+        });
       // Show what is known after each tile, so the list fills in while the walk continues.
       const emit = (): void => {
         if (!onPartial) return;
@@ -451,14 +464,19 @@ export class MapillaryClient implements PanoSource {
       const bands: Pano[] = [];
       let yearsOk = 0;
       let lastErr: unknown = null;
-      for (let y = FIRST_YEAR; y <= thisYear; y++) {
-        try {
-          const r = await this.searchBox(tile.bbox, { ...base, start_captured_at: isoStart(y), end_captured_at: isoEnd(y) });
-          bands.push(...r.panos);
+      const years: number[] = [];
+      for (let y = FIRST_YEAR; y <= thisYear; y++) years.push(y);
+      // All year bands in flight at once; the gate still spaces their starts.
+      const results = await Promise.allSettled(
+        years.map((y) => this.searchBox(tile.bbox, { ...base, start_captured_at: isoStart(y), end_captured_at: isoEnd(y) })),
+      );
+      for (const res of results) {
+        if (res.status === 'fulfilled') {
+          bands.push(...res.value.panos);
           yearsOk++;
-        } catch (err) {
-          if (err instanceof ThrottledError) throw err;
-          lastErr = err;
+        } else {
+          if (res.reason instanceof ThrottledError) throw res.reason;
+          lastErr = res.reason;
         }
       }
       // Every year failed: fail the tile (not cached) rather than cache an empty success.
@@ -526,24 +544,27 @@ export function nearestPerYear(panos: Pano[], at: LatLng, maxOffsetM: number): M
 
 /**
  * Group panoramas into places: a place is a seed (newest panorama first) plus every panorama
- * within `maxOffsetM` of it. Keeps places with 2+ distinct capture years, nearest to `centre` first.
+ * within `maxOffsetM` of it. A place's years are exactly the years with a panorama within
+ * `maxOffsetM` of its seed — what `yearsAt` finds when the seed is opened — so the list never
+ * promises a year the time machine cannot show. Keeps places with 2+ years; a place within
+ * `MERGE_REACH` offsets of a kept one (another lane of the same street) is dropped as a
+ * duplicate. Nearest to `centre` first.
  */
 export function clusterPlaces(panos: Pano[], centre: LatLng, maxOffsetM: number, limit: number): NearbyPlace[] {
   const newestFirst = [...panos].sort((a, b) => b.capturedAt - a.capturedAt);
-  const clusters: { seed: Pano; years: Set<number> }[] = [];
+  const seeds: Pano[] = [];
   for (const p of newestFirst) {
-    const year = yearOfMs(p.capturedAt);
-    // Same spot: within the offset. Otherwise a wider reach, but only to fill a year the place
-    // lacks, so captures from different lanes/sides of one street join instead of duplicating.
-    const home =
-      clusters.find((c) => distanceM(c.seed, p) <= maxOffsetM) ??
-      clusters.find((c) => !c.years.has(year) && distanceM(c.seed, p) <= maxOffsetM * MERGE_REACH);
-    if (home) home.years.add(year);
-    else clusters.push({ seed: p, years: new Set([yearOfMs(p.capturedAt)]) });
+    if (!seeds.some((s) => distanceM(s, p) <= maxOffsetM)) seeds.push(p);
   }
-  return clusters
-    .filter((c) => c.years.size >= 2)
-    .sort((a, b) => distanceM(a.seed, centre) - distanceM(b.seed, centre) || b.years.size - a.years.size)
+  const kept: { seed: Pano; years: number[] }[] = [];
+  for (const seed of seeds) {
+    const years = [...nearestPerYear(panos, seed, maxOffsetM).keys()];
+    if (years.length < 2) continue;
+    if (kept.some((k) => distanceM(k.seed, seed) <= maxOffsetM * MERGE_REACH)) continue;
+    kept.push({ seed, years });
+  }
+  return kept
+    .sort((a, b) => distanceM(a.seed, centre) - distanceM(b.seed, centre) || b.years.length - a.years.length)
     .slice(0, limit)
-    .map((c) => ({ lat: c.seed.lat, lng: c.seed.lng, panoId: c.seed.id, years: [...c.years].sort((x, y) => x - y) }));
+    .map((c) => ({ lat: c.seed.lat, lng: c.seed.lng, panoId: c.seed.id, years: c.years }));
 }

@@ -21,7 +21,7 @@ export function buildLadder(panoYears: readonly number[], currentYear: number | 
 /** Message for a dial push past either end of the ladder. */
 export function limitMessage(direction: 'earlier' | 'later', edgeYear: number): string {
   return direction === 'earlier'
-    ? `No earlier imagery here. Earliest is ${edgeYear}.`
+    ? `Some years street Unavailable . Earliest is ${edgeYear}.`
     : `No later imagery here. Latest is ${edgeYear}.`;
 }
 

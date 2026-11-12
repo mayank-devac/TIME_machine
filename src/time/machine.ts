@@ -52,6 +52,11 @@ export class LensMachine {
 
   constructor(private readonly t: LensTuning) {}
 
+  /** Capture year of the panorama on screen (the present), or null. */
+  get presentYear(): number | null {
+    return this.currentYear;
+  }
+
   get isActive(): boolean {
     return this.phase !== 'off' && this.phase !== 'committed';
   }

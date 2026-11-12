@@ -170,7 +170,7 @@ export class LandingPage {
     const input = form.querySelector<HTMLInputElement>('input')!;
     const results = form.querySelector<HTMLUListElement>('.tm-results')!;
     this.search = createDebouncedSearch({
-      search: (q, signal) => searchPlaces(q, { fetchFn, signal }),
+      search: (q, signal, explicit) => searchPlaces(q, { fetchFn, signal, explicit }),
       onResults: (list, q) => {
         results.replaceChildren(...list.map((p) => this.hit(p)));
         if (q.length >= 3 && list.length === 0) this.setStatus(`No places found for "${q}".`, true);

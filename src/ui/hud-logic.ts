@@ -223,7 +223,10 @@ export function placesPage(
   const page = Math.min(Math.max(0, Math.floor(requestedPage)), pageCount - 1);
   const rows = places.slice(page * PLACES_PER_PAGE, (page + 1) * PLACES_PER_PAGE).map((p, i) => {
     const ys = p.years.filter((y) => Number.isFinite(y)).sort((a, b) => a - b);
-    const yearsText = ys.length === 0 ? '' : ys.length === 1 ? String(ys[0]) : `${ys[0]}-${ys[ys.length - 1]}`;
+    // Every year on its own, first in full ("2016, 22, 25"), so a gap year is never implied.
+    const yearsText = [...new Set(ys)]
+      .map((y, i) => (i === 0 ? String(y) : String(y % 100).padStart(2, '0')))
+      .join(', ');
     return { name: centre ? describeOffset(centre, p) : 'Nearby', yearsText, index: page * PLACES_PER_PAGE + i };
   });
   return { rows, page, pageCount, pageText: `${page + 1} / ${pageCount}` };

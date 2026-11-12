@@ -257,13 +257,20 @@ describe('clusterPlaces', () => {
     expect(out[0]).toMatchObject({ panoId: 'a', years: [2016, 2020, 2025] });
   });
 
-  it('merges nearby places with different years into one, but not same-year ones', async () => {
+  it('never counts a year from beyond the offset (the time machine could not show it)', async () => {
     const { clusterPlaces } = await import('./mapillary.js');
     const c = { lat: 40.758, lng: -73.9855 };
-    const merged = clusterPlaces([mk('a', 2025, 0), mk('b', 2023, 30)], c, 12, 30);
-    expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({ panoId: 'a', years: [2023, 2025] });
+    expect(clusterPlaces([mk('a', 2025, 0), mk('b', 2023, 30)], c, 12, 30)).toHaveLength(0);
     expect(clusterPlaces([mk('a', 2025, 0), mk('b', 2025, 30)], c, 12, 30)).toHaveLength(0);
+  });
+
+  it('keeps one row for two valid places a lane apart', async () => {
+    const { clusterPlaces } = await import('./mapillary.js');
+    const c = { lat: 40.758, lng: -73.9855 };
+    const panos = [mk('a', 2025, 0), mk('a2', 2022, 5), mk('b', 2024, 30), mk('b2', 2016, 33)];
+    const out = clusterPlaces(panos, c, 12, 30);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ panoId: 'a', years: [2022, 2025] });
   });
 
   it('puts the nearest place first', async () => {

@@ -23,7 +23,7 @@ Entry: `createTrack` in `entry.ts`. Everything here talks to the rest of the app
   or `[` and `]`.
 - **Year ladder.** The stops are only the years the imagery source returned for this spot,
   except the one on screen. No invented years. Dialling past the first or last stop does
-  nothing and emits a recoverable `error` ("No earlier imagery here. Earliest is 2020."),
+  nothing and emits a recoverable `error` ("Some years street Unavailable . Earliest is 2020."),
   at most once per 2 s, which the UI shows as a toast. `time:yearRequested` (the year panel)
   jumps the dial straight to a listed year.
 - **Push-through.** Hold a pinch or the trigger on the lens hand (Space on desktop) for 300 ms
@@ -38,7 +38,7 @@ Emits: `time:yearsKnown` (after every `pano:shown`), `time:yearChanged`, `time:c
 `loading` (scope `time`), `error` (source `time`).
 
 If a spot has one year only, the lens does not open; `time:yearsKnown` carries a single year
-so Track G can show "no earlier imagery here".
+so Track G can show "Some years street Unavailable ".
 
 ## Rules it keeps
 

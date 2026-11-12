@@ -304,8 +304,16 @@ export class TimeMachine {
    * `progress` is the twist since the last click as a fraction of a step; positive is later.
    */
   dialFrame(grip: Vector3 | null, head: Vector3, held: boolean, progress: number): void {
-    if (grip === null || !this.machine.isActive || !this.machine.followsHand) this.dial.hide();
-    else this.dial.update(grip, head, held, progress);
+    // Street view always shows the present year at the dial hand; the full dial (ring,
+    // ticks, bead) appears only while the time machine is on and following the hand.
+    if (grip === null || this.ctx.state.get().mode === 'table') {
+      this.dial.hide();
+      return;
+    }
+    const m = this.machine;
+    const full = m.isActive && m.followsHand;
+    this.dial.setMode(full, m.presentYear);
+    this.dial.update(grip, head, full && held, full ? progress : 0);
   }
 
   /** Mirror state into the marker components (only on change) for ECS tools and tests. */

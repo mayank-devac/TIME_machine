@@ -114,6 +114,12 @@ export class TimeLensSystem extends createSystem({}) {
         }
       } else {
         this.dial.end();
+        // Keep the present-year label on the dial hand while the machine is off.
+        const dialSide: Side = lensSide === 'right' ? 'left' : 'right';
+        if (this.input.xr.getPrimaryInputSource(dialSide) !== undefined) {
+          this.player.gripSpaces[dialSide].getWorldPosition(this.dialPos);
+          dialGrip = this.dialPos;
+        }
       }
     }
 

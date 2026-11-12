@@ -8,7 +8,7 @@ description: How this project gets 360° street imagery and its capture dates fr
 Mapillary is the only imagery source in this project. It is free, its images carry capture
 dates, and its client token is designed to be shipped in browser code. Google imagery is
 ruled out (no historical imagery in official APIs, billing account required), so do not
-reach for it when Mapillary coverage is thin; show the "no earlier imagery here" state instead.
+reach for it when Mapillary coverage is thin; show the "Some years street Unavailable " state instead.
 
 Facts below were read from `https://www.mapillary.com/developer/api-documentation` on
 2026-11-10. Items under "Not yet proven" were not confirmed. Re-read the docs page before

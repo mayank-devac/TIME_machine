@@ -245,7 +245,7 @@ describe('places list', () => {
     expect(first.rows).toHaveLength(5);
     expect(first.pageText).toBe('1 / 3');
     expect(first.rows[0]).toMatchObject({ name: 'Here', yearsText: '2020', index: 0 });
-    expect(first.rows[1]).toMatchObject({ name: '30m N', yearsText: '2016-2025', index: 1 });
+    expect(first.rows[1]).toMatchObject({ name: '30m N', yearsText: '2016, 20, 25', index: 1 });
     const last = placesPage(places, centre, 99);
     expect(last.page).toBe(2);
     expect(last.rows.map((r) => r.index)).toEqual([10, 11]);
