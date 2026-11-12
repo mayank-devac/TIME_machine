@@ -157,6 +157,10 @@ export interface PlacesPage {
 export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false): boolean =>
   (mode === 'table' || mode === 'street') && (placeCount > 0 || loading);
 
+/** The settings switches (satellite, dark, 3D buildings) only shape the table map, so the
+ * panel shows at the table alone — not in street or portal. */
+export const showSettingsPanel = (mode: Mode): boolean => mode === 'table';
+
 /** Drops places with a non-finite position or no finite year, so no row can read "NaN".
  * When `centre` is given with `minOffsetM > 0`, also drops places closer than that to the
  * centre — the street panel must not list the spot the player is standing on. */
@@ -177,9 +181,9 @@ export function usablePlaces<T extends LatLng & { years: readonly number[] }>(
 }
 
 /** Whether a collapsible panel starts folded to its header in a mode. Search and settings are
- * rare; the places list is secondary once the player stands in a street. */
-export function startsCollapsed(panel: 'places' | 'search' | 'settings', mode: Mode): boolean {
-  return panel === 'places' ? mode !== 'table' : true;
+ * rare; the places list stays open everywhere, so its arrows are always reachable. */
+export function startsCollapsed(panel: 'places' | 'search' | 'settings', _mode: Mode): boolean {
+  return panel !== 'places';
 }
 
 /** PREV and NEXT are only worth showing when there is somewhere to go. */

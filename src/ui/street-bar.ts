@@ -10,7 +10,8 @@ import { paintBox, paintButton, paintIconButton } from './panel-style.js';
 export function createStreetBar(host: Host, yearsKnown: () => boolean): PanelModule {
   const { bus, state } = host.ctx;
   let chips: ReturnType<typeof yearChips> = [];
-  let navShown: boolean | null = null;
+  /** Last painted nav-button and year-chip shape; a change means the panel's height changed. */
+  let lastShape: string | null = null;
 
   const inputs = () => ({ state: state.get(), yearsKnown: yearsKnown() });
 
@@ -47,8 +48,9 @@ export function createStreetBar(host: Host, yearsKnown: () => boolean): PanelMod
       btn?.setProperties({ display: view.showNavButtons ? 'flex' : 'none' });
       paintIconButton(btn, host.el('bar', `${id}-icon`), icon, 'control');
     }
-    if (navShown !== view.showNavButtons) {
-      navShown = view.showNavButtons;
+    const shape = `${view.showNavButtons ? 'nav' : 'no-nav'}:${chips.length > 0 ? 'years' : 'no-years'}`;
+    if (shape !== lastShape) {
+      lastShape = shape;
       host.resized('bar');
     }
   };

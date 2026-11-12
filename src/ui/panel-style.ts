@@ -38,10 +38,11 @@ export type Fill =
   | 'listening' // the mic while it listens
   | 'knobOn' // the knob of a switch that is on
   | 'knobOff'
+  | 'ghost' // a subtle button with a surface fill but no border (chevron arrows)
   | 'none'; // no fill and no border (layout wrappers)
 
 /** What a piece of text is. */
-export type Ink = 'primary' | 'secondary' | 'onAccent' | 'past' | 'disabled';
+export type Ink = 'primary' | 'secondary' | 'onAccent' | 'past' | 'disabled' | 'muted';
 
 interface BoxColours {
   backgroundColor: string;
@@ -61,7 +62,8 @@ function boxColours(t: Readonly<Tokens>, fill: Fill): BoxColours {
     case 'past':
       return { backgroundColor: withAlpha(mix(t.surface, t.warning, 0.22), 0.7), borderColor: t.warning };
     case 'notice':
-      return { backgroundColor: withAlpha(mix(opaque(t.background), t.warning, 0.28), 0.75), borderColor: t.warning };
+      // Dark theme glass behind grey text: readable over bright panos, still not a solid block.
+      return { backgroundColor: withAlpha(opaque(t.background), 0.7), borderColor: t.warning };
     case 'danger':
       return { backgroundColor: withAlpha(mix(opaque(t.background), t.danger, 0.32), 0.75), borderColor: t.danger };
     case 'listening':
@@ -70,6 +72,8 @@ function boxColours(t: Readonly<Tokens>, fill: Fill): BoxColours {
       return { backgroundColor: t.onAccent, borderColor: t.onAccent };
     case 'knobOff':
       return { backgroundColor: t.textSecondary, borderColor: t.textSecondary };
+    case 'ghost':
+      return { backgroundColor: t.surface, borderColor: withAlpha(t.border, 0) };
     case 'none':
       return { backgroundColor: withAlpha(t.background, 0), borderColor: withAlpha(t.border, 0) };
   }
@@ -87,6 +91,9 @@ function inkColour(t: Readonly<Tokens>, ink: Ink): string {
       return t.textPrimary;
     case 'disabled':
       return withAlpha(t.textSecondary, 0.6);
+    case 'muted':
+      // Grey: light enough to read on the dark notice glass, still softer than primary.
+      return withAlpha(t.textPrimary, 0.8);
   }
 }
 
@@ -110,7 +117,10 @@ function renderBox(el: El, s: BoxState): void {
   const props: Props = {
     backgroundColor: c.backgroundColor,
     borderColor: c.borderColor,
-    borderWidth: s.fill === 'none' || s.fill === 'knobOn' || s.fill === 'knobOff' ? 0 : SHAPE.borderWidth,
+    borderWidth:
+      s.fill === 'none' || s.fill === 'panel' || s.fill === 'ghost' || s.fill === 'knobOn' || s.fill === 'knobOff' || s.fill === 'notice'
+        ? 0
+        : SHAPE.borderWidth,
   };
   let scale = 1;
   // A disabled control gives no hover feedback: it would promise an action that is not there.

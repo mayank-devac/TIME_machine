@@ -47,9 +47,9 @@ const CSS = `
   box-shadow:0 8px 32px var(--shade);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
 .tm-landing .tm-head{display:flex;align-items:center;gap:10px}
 .tm-landing h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:500;letter-spacing:.01em;line-height:1.2}
-.tm-landing .tm-toggle{flex:none;width:28px;height:28px;padding:0;display:grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--wash);color:var(--tm-text-secondary)}
+.tm-landing .tm-toggle{flex:none;width:28px;height:28px;padding:0;display:grid;place-items:center;border-radius:50%;background:var(--wash);color:var(--tm-text-secondary)}
 .tm-landing .tm-toggle svg{width:20px;height:20px;fill:currentColor}
-.tm-landing .tm-toggle:hover{background:var(--tm-hover-fill);border-color:var(--tm-hover);color:var(--tm-text-primary)}
+.tm-landing .tm-toggle:hover{background:var(--tm-hover-fill);color:var(--tm-text-primary)}
 .tm-landing .tm-body{display:flex;flex-direction:column;gap:10px;min-height:0}
 .tm-landing .tm-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--tm-text-secondary);font-size:13px}
 .tm-landing .tm-steps li{display:flex;gap:10px;align-items:baseline}
@@ -113,7 +113,7 @@ export class LandingPage {
   private readonly body: HTMLElement;
   private readonly credit: HTMLElement;
   private readonly search: DebouncedSearch;
-  private collapsed = false;
+  private collapsed = true;
 
   constructor(
     private readonly cb: LandingCallbacks,
@@ -130,9 +130,9 @@ export class LandingPage {
     root.innerHTML = `
       <div class="tm-head">
         <h1>Street View Time Machine</h1>
-        <button type="button" class="tm-toggle" aria-expanded="true" title="Hide" aria-label="Hide">${CHEVRON_UP}</button>
+        <button type="button" class="tm-toggle" aria-expanded="false" title="Show" aria-label="Show">${CHEVRON_DOWN}</button>
       </div>
-      <div class="tm-body">
+      <div class="tm-body" style="display:none">
         <form class="tm-search" role="search" autocomplete="off">
           <input type="search" name="q" placeholder="Search for a place…" aria-label="Search for a place" />
           <ul class="tm-results" aria-label="Search results"></ul>

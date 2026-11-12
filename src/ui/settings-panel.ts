@@ -6,7 +6,7 @@
  * Each switch writes `ctx.prefs`; the map and the theme follow `prefs:changed`.
  */
 import type { Prefs } from '../contracts.js';
-import { startsCollapsed } from './hud-logic.js';
+import { showSettingsPanel, startsCollapsed } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
 import { paintBox, paintIconButton, paintText } from './panel-style.js';
 
@@ -24,19 +24,21 @@ export const SETTINGS_SWITCHES: readonly Switch[] = [
 ];
 
 export function createSettingsPanel(host: Host): PanelModule {
-  const { prefs } = host.ctx;
+  const { prefs, state } = host.ctx;
   let folded = startsCollapsed('settings', 'table');
   let shape: boolean | null = null;
 
   const refresh = (): void => {
-    host.setVisible('settings', true); // reachable in every mode
+    const show = showSettingsPanel(state.get().mode);
+    host.setVisible('settings', show);
+    if (!show) return;
     paintBox(host.el('settings', 'settings-root'), 'panel');
     paintText(host.text('settings', 'settings-title'), 'secondary');
     paintIconButton(
       host.el('settings', 'settings-fold'),
       host.el('settings', 'settings-fold-icon'),
       folded ? 'chevron-down' : 'chevron-up',
-      'control',
+      'ghost',
     );
     host.el('settings', 'settings-content')?.setProperties({ display: folded ? 'none' : 'flex' });
 

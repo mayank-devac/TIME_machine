@@ -280,9 +280,18 @@ describe('places list', () => {
     expect(showPlacesPanel('portal', 3)).toBe(false);
   });
 
+  it('shows the settings panel at the table alone', async () => {
+    const { showSettingsPanel } = await import('./hud-logic.js');
+    expect([showSettingsPanel('table'), showSettingsPanel('street'), showSettingsPanel('portal')]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it('folds rare panels to their header, and hides the pager on a single page', async () => {
     const { startsCollapsed, showPager } = await import('./hud-logic.js');
-    expect([startsCollapsed('places', 'table'), startsCollapsed('places', 'street')]).toEqual([false, true]);
+    expect([startsCollapsed('places', 'table'), startsCollapsed('places', 'street')]).toEqual([false, false]);
     expect([startsCollapsed('search', 'table'), startsCollapsed('settings', 'street')]).toEqual([true, true]);
     expect([showPager(1), showPager(2)]).toEqual([false, true]);
   });

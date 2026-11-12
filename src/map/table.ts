@@ -762,7 +762,7 @@ export class TableMap implements MapTable {
     if (this.hintMesh) this.disposeStrip(this.hintMesh);
     const z = this.size / 2 + RIM_M / 2;
     this.hintMesh = this.textStrip(
-      'Drag to pan  ·  spread two hands or slide the rail to zoom  ·  tap a glowing street',
+      'Drag to pan  ·  thumbstick up/down, spread two hands or slide the rail to zoom  ·  tap a glowing street',
       -z,
       t.textPrimary,
       26,

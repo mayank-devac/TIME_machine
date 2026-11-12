@@ -45,7 +45,7 @@ export function createSearchPanel(host: Host): PanelModule {
       host.el('search', 'search-fold'),
       host.el('search', 'search-fold-icon'),
       folded ? 'chevron-down' : 'chevron-up',
-      'control',
+      'ghost',
     );
     host.el('search', 'search-content')?.setProperties({ display: folded ? 'none' : 'flex' });
 

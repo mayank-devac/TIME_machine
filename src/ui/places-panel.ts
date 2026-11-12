@@ -74,7 +74,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
       host.el('places', 'places-fold'),
       host.el('places', 'places-fold-icon'),
       isFolded ? 'chevron-down' : 'chevron-up',
-      'control',
+      'ghost',
     );
     host.el('places', 'places-content')?.setProperties({ display: isFolded ? 'none' : 'flex' });
 
@@ -97,8 +97,8 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     const page = host.text('places', 'places-page');
     page?.setProperties({ text: view.pageText });
     paintText(page, 'secondary');
-    paintIconButton(host.el('places', 'places-prev'), host.el('places', 'places-prev-icon'), 'chevron-left', 'control');
-    paintIconButton(host.el('places', 'places-next'), host.el('places', 'places-next-icon'), 'chevron-right', 'control');
+    paintIconButton(host.el('places', 'places-prev'), host.el('places', 'places-prev-icon'), 'chevron-left', 'ghost');
+    paintIconButton(host.el('places', 'places-next'), host.el('places', 'places-next-icon'), 'chevron-right', 'ghost');
 
     // The grip sits above the panel, so it has to move whenever the panel's height changes.
     const next = `${isFolded}|${view.rows.length}|${pager}`;

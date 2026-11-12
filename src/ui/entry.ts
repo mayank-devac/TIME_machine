@@ -1,9 +1,9 @@
-import { Box3, Quaternion, RayInteractable, Vector3, createSystem } from '@iwsdk/core';
-import type { Entity, Mesh, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
+import { Mesh, MeshBasicMaterial, Quaternion, RayInteractable, RingGeometry, Vector3, createSystem } from '@iwsdk/core';
+import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
 import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
 import { readHead } from '../head.js';
-import { onThemeChange } from '../theme.js';
+import { currentTokens, onThemeChange } from '../theme.js';
 import { HudTag } from '../track-components.js';
 import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotPosition, slotSpec, yawFromForward } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
@@ -48,20 +48,24 @@ const RECENTRE_AFTER_XR_MS = 700;
 const GRIP_SETTLE_MS = 150;
 /** Gap between a panel's top edge and its grip, metres. */
 const GRIP_GAP_M = 0.03;
-/** Top edge used when a panel cannot be measured, metres above its centre. */
-const GRIP_FALLBACK_TOP_M = 0.06;
-const SPINNER_FRAMES = ['Loading', 'Loading.', 'Loading..', 'Loading...'];
+/** Buffer spinner: arc sweep and spin rate, rad/s. */
+const SPINNER_ARC = Math.PI * 1.5;
+const SPINNER_SPEED = 5;
+/** Pill width while only the spinner shows, UIKit units (the text pill is 70). */
+const SPINNER_PILL = 12;
 
 /**
- * Per frame: turn every visible panel to face the viewer, wherever it is placed. A panel
- * keeps its authored or dragged position; only its orientation tracks the head. The work
- * lives behind a callback because the object to turn is the rig root (not the entity's own
- * asset, which is a child of it), and the panel map belongs to the UI track.
+ * Per frame: turn every visible panel to face the viewer, wherever it is placed, and spin the
+ * status panel's buffer arc. The work lives behind a callback because the object to turn is the
+ * rig root (not the entity's own asset, which is a child of it), and the panel map belongs to
+ * the UI track.
  */
 class PanelFaceSystem extends createSystem({}) {
   face: (() => void) | null = null;
+  spinner: Mesh | null = null;
 
-  update(): void {
+  update(delta: number): void {
+    if (this.spinner?.visible) this.spinner.rotation.z -= delta * SPINNER_SPEED;
     this.face?.();
   }
 }
@@ -72,23 +76,18 @@ export const createTrack: TrackFactory = async (ctx) => {
   const panels = new Map<HudSlot, Panel>();
   const gripTimers = new Map<HudSlot, ReturnType<typeof setTimeout>>();
   const busy = new BusyScopes();
-  let spinnerIndex = 0;
-  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let recentreTimer: ReturnType<typeof setTimeout> | null = null;
   let yearsKnown = false;
   let photos: ArchivePhoto[] = [];
   let toast: Toast | null = null;
   let disposed = false;
-  let creditsFolded = false;
+  let creditsFolded = true;
   let creditsShape: boolean | null = null;
 
   // Scratch objects, allocated once.
   const head = new Vector3();
   const fwd = new Vector3();
   const headQuat = new Quaternion();
-  const savedQuat = new Quaternion();
-  const rigPos = new Vector3();
-  const box3 = new Box3();
   const pos = { x: 0, y: 0, z: 0 };
 
   const toasts = new ToastQueue({
@@ -115,6 +114,19 @@ export const createTrack: TrackFactory = async (ctx) => {
     node.visible = false;
     panels.set(slot, { entity, asset, rig, node });
   }
+
+  /**
+   * The status panel's buffer spinner: a YouTube-style arc mesh in front of the pill. UIKit's
+   * bundled font atlas has no spinner glyphs, so the animation is geometry, not text. Built at
+   * pill scale (UIKit units, 1 = 1 cm) and scaled down to the panel's metre space.
+   */
+  const spinnerGeometry = new RingGeometry(1.7, 2.6, 24, 1, 0, SPINNER_ARC);
+  const spinnerMaterial = new MeshBasicMaterial({ color: currentTokens().accent });
+  const spinner = new Mesh(spinnerGeometry, spinnerMaterial);
+  spinner.scale.setScalar(0.01); // cm-geometry into the metre-space of the UIKit group
+  spinner.position.z = 0.003; // in front of the pill surface
+  spinner.visible = false;
+  panels.get('status')!.asset.add(spinner);
 
   const host: Host = {
     ctx,
@@ -145,53 +157,19 @@ export const createTrack: TrackFactory = async (ctx) => {
     },
   };
 
-  /** Put a panel's grip just above its top edge, measured with the rig turned square on. */
+  /**
+   * Put a panel's grip just above its top edge. UIKit panels are instanced meshes with empty
+   * geometry bounds, so a `Box3` walk measures nothing; the top edge comes from UIKit's own
+   * laid-out height instead (the root element is centred on the panel origin, 1 px = 1 cm).
+   */
   function placeGrip(slot: HudSlot): void {
     const panel = panels.get(slot);
-    const root = host.el(slot, PANELS[slot].root) as (El & Object3D) | null;
+    const root = host.el(slot, PANELS[slot].root) as (El & { size?: { peek(): [number, number] | undefined } }) | null;
     if (disposed || !panel?.rig || !root) return;
-    const rig = panel.rig.root;
-    savedQuat.copy(rig.quaternion);
-    rig.quaternion.identity();
-    rig.updateMatrixWorld(true);
-    const measured = measureTop(root);
-    rig.getWorldPosition(rigPos);
-    rig.quaternion.copy(savedQuat);
-    rig.updateMatrixWorld(true);
-    const top = measured - rigPos.y;
-    // Before the first layout the box is empty or wild; keep the grip close in that case.
-    const sane = Number.isFinite(top) && top > 0 && top < 1.5;
-    if (!sane) {
-      console.warn(
-        `[ui] grip for "${slot}" could not be measured (top=${top}); using the fallback offset of ${GRIP_FALLBACK_TOP_M} m.`,
-      );
-    }
-    panel.rig.placeGrip(0, (sane ? top : GRIP_FALLBACK_TOP_M) + GRIP_GAP_M, 0);
-  }
-
-  /**
-   * World-space top edge of a panel. Walks the meshes itself instead of `Box3.setFromObject`,
-   * which throws on UIKit children whose geometry has no bounds (SVG icons, empty text).
-   * Returns NaN when nothing could be measured.
-   */
-  function measureTop(root: Object3D): number {
-    let top = Number.NEGATIVE_INFINITY;
-    try {
-      root.traverse((obj) => {
-        const mesh = obj as Mesh;
-        const geometry = mesh.geometry;
-        if (!mesh.isMesh || !geometry) return;
-        if (!geometry.boundingBox) geometry.computeBoundingBox();
-        const bb = geometry.boundingBox;
-        if (!bb || bb.isEmpty()) return;
-        box3.copy(bb).applyMatrix4(mesh.matrixWorld);
-        if (Number.isFinite(box3.max.y) && box3.max.y > top) top = box3.max.y;
-      });
-    } catch (err) {
-      console.warn('[ui] panel bounds could not be measured; the grip falls back to a fixed offset.', err);
-      return Number.NaN;
-    }
-    return top === Number.NEGATIVE_INFINITY ? Number.NaN : top;
+    const heightPx = root.size?.peek()?.[1] ?? Number.NaN;
+    // Before the first layout the size is unknown; keep the grip close in that case.
+    const top = Number.isFinite(heightPx) && heightPx > 0 ? (heightPx / 2) * 0.01 : 0.06;
+    panel.rig.placeGrip(0, top + GRIP_GAP_M, 0);
   }
 
   /**
@@ -232,7 +210,9 @@ export const createTrack: TrackFactory = async (ctx) => {
   };
 
   world.registerSystem(PanelFaceSystem);
-  world.getSystem(PanelFaceSystem)!.face = faceHead;
+  const faceSystem = world.getSystem(PanelFaceSystem)!;
+  faceSystem.face = faceHead;
+  faceSystem.spinner = spinner;
 
   /** Forget where the user dragged the panels, then recentre (new XR session, desktop C key). */
   const resetPlacements = (): void => {
@@ -273,35 +253,33 @@ export const createTrack: TrackFactory = async (ctx) => {
     const view = deriveHud({ state: state.get(), yearsKnown });
     let message: string | null = null;
     let fill: Fill = 'panel';
+    let spinnerOnly = false;
     if (toast) {
       message = toast.message;
       fill = 'danger';
     } else if (busy.busy) {
-      message = SPINNER_FRAMES[spinnerIndex] ?? 'Loading';
+      // Buffering shows the rotating arc alone, like a video player's spinner.
+      spinnerOnly = true;
     } else if (view.noEarlierImagery) {
       message = 'No earlier imagery here';
       fill = 'notice';
     }
-    host.setVisible('status', message !== null);
+    host.setVisible('status', message !== null || spinnerOnly);
+    spinner.visible = spinnerOnly;
+    const root = host.el('status', 'status-root');
+    if (spinnerOnly) {
+      root?.setProperties({ width: SPINNER_PILL });
+      host.text('status', 'status-text')?.setProperties({ text: '', display: 'none' });
+      paintBox(root, 'panel');
+      return;
+    }
+    root?.setProperties({ width: 70 }); // back to the class width for text messages
     if (message === null) return;
     const el = host.text('status', 'status-text');
-    el?.setProperties({ text: message });
-    paintText(el, 'primary');
-    paintBox(host.el('status', 'status-root'), fill);
+    el?.setProperties({ text: message, display: 'flex' });
+    paintText(el, fill === 'notice' ? 'muted' : 'primary');
+    paintBox(root, fill);
   }
-
-  const updateSpinner = (): void => {
-    if (busy.busy && spinnerTimer === null) {
-      spinnerTimer = setInterval(() => {
-        spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
-        refreshStatus();
-      }, 350);
-    } else if (!busy.busy && spinnerTimer !== null) {
-      clearInterval(spinnerTimer);
-      spinnerTimer = null;
-      spinnerIndex = 0;
-    }
-  };
 
   const bar = createStreetBar(host, () => yearsKnown);
   const places = createPlacesPanel(host);
@@ -320,6 +298,7 @@ export const createTrack: TrackFactory = async (ctx) => {
   // ---------------------------------------------------------------------------------------
   offs.push(
     onThemeChange(repaintAll),
+    onThemeChange((t) => spinnerMaterial.color.set(t.accent)),
     bus.on('prefs:changed', () => settings.refresh()),
     bus.on('map:viewChanged', ({ lat, lng, zoom }) => void places.load(lat, lng, zoom)),
     bus.on('spot:selected', () => {
@@ -349,7 +328,6 @@ export const createTrack: TrackFactory = async (ctx) => {
     }),
     bus.on('loading', ({ scope, busy: isBusy }) => {
       busy.set(scope, isBusy);
-      updateSpinner();
       refreshStatus();
     }),
     bus.on('error', ({ source, message, recoverable }) => {
@@ -393,8 +371,9 @@ export const createTrack: TrackFactory = async (ctx) => {
       offs.forEach((off) => off());
       world.unregisterSystem(PanelFaceSystem);
       toasts.dispose();
-      if (spinnerTimer !== null) clearInterval(spinnerTimer);
       if (recentreTimer !== null) clearTimeout(recentreTimer);
+      spinnerGeometry.dispose();
+      spinnerMaterial.dispose();
       for (const t of gripTimers.values()) clearTimeout(t);
       gripTimers.clear();
       for (const { entity, asset, rig } of panels.values()) {

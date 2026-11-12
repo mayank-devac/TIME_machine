@@ -9,7 +9,7 @@
  */
 import type { TrackContext } from '../contracts.js';
 
-export const DEV_SCENARIO: '' | 'fixture' | 'fixture-keys' = '';
+export const DEV_SCENARIO: '' | 'fixture' | 'fixture-keys' = 'fixture';
 
 export async function runDevScenario({ bus, state, services }: TrackContext): Promise<() => void> {
   const scenario: string = DEV_SCENARIO;
