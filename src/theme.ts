@@ -1,5 +1,5 @@
 /**
- * The palette ("Ink and Paper") and the hover rules. Orchestrator-owned.
+ * The palette (black/white with green accents) and the hover rules. Orchestrator-owned.
  *
  * This is the ONLY file that may contain a colour literal. Every surface (UIKitML panels, the
  * DOM landing card, canvas-drawn labels, meshes, shaders, MapLibre layers) reads its colours
@@ -41,33 +41,33 @@ export interface Tokens {
 export type TokenName = keyof Tokens;
 
 const DARK: Tokens = {
-  background: '#0B1220E6',
-  surface: '#16213A',
-  border: '#2E3F63',
-  textPrimary: '#F2F5FA',
-  textSecondary: '#9FB0CC',
-  accent: '#FF7A45',
-  onAccent: '#0B1220',
-  success: '#3DDC97',
-  warning: '#FFC233',
-  danger: '#FF5C6C',
-  hover: '#8FC1FF',
-  hoverFill: '#24345A',
+  background: '#2A382AB8',
+  surface: '#4A634A99',
+  border: '#6FA66B',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#FFFFFF',
+  accent: '#7BFF73',
+  onAccent: '#000000',
+  success: '#5FE058',
+  warning: '#FFD35C',
+  danger: '#FF7A88',
+  hover: '#D9FFD6',
+  hoverFill: '#3F6B3B',
 };
 
 const LIGHT: Tokens = {
-  background: '#F6F1E7EB',
-  surface: '#FFFFFF',
-  border: '#C9BFAE',
-  textPrimary: '#1B2433',
-  textSecondary: '#5B6779',
-  accent: '#C2410C',
-  onAccent: '#FFFFFF',
-  success: '#1F8A5B',
-  warning: '#B7791F',
+  background: '#FFFFFFA6',
+  surface: '#F6FCF5B3',
+  border: '#B6DCB3',
+  textPrimary: '#000000',
+  textSecondary: '#000000',
+  accent: '#18A711',
+  onAccent: '#000000',
+  success: '#43C33C',
+  warning: '#A35F00',
   danger: '#C92A3A',
-  hover: '#1C6DD0',
-  hoverFill: '#EDE6D8',
+  hover: '#1B7416',
+  hoverFill: '#D7F0D5',
 };
 
 const THEMES: Record<ThemeName, Tokens> = { dark: DARK, light: LIGHT };

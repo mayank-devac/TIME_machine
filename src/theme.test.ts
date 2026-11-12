@@ -66,7 +66,7 @@ describe('palette', () => {
     expect(withAlpha('#0B1220E6', 1)).toBe('#0B1220FF');
     expect(mix('#000000', '#FFFFFF', 0.5)).toBe('#808080');
     expect(mix('#102030', '#FFFFFF', 0)).toBe('#102030');
-    expect(cssVars(tokens('dark'))).toContain('--tm-text-primary:#F2F5FA');
+    expect(cssVars(tokens('dark'))).toContain('--tm-text-primary:#FFFFFF');
     expect(cssVars(tokens('dark'))).toContain('--tm-hover-fill:');
   });
 

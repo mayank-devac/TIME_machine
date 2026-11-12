@@ -17,7 +17,7 @@ import {
 } from './hud-logic.js';
 import type { PlacesPage } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
-import { paintBox, paintButton, paintText } from './panel-style.js';
+import { paintBox, paintIconButton, paintText } from './panel-style.js';
 
 export interface PlacesPanel extends PanelModule {
   /** Look up places around a point; `zoom` is null in a street (no map zoom applies). */
@@ -70,9 +70,12 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     const title = host.text('places', 'places-title');
     title?.setProperties({ text: placesTitle(zoom, loading, places.length, dotFrame) });
     paintText(title, 'secondary');
-    const foldLabel = host.text('places', 'places-fold-label');
-    foldLabel?.setProperties({ text: isFolded ? '+' : '-' });
-    paintButton(host.el('places', 'places-fold'), foldLabel, 'control');
+    paintIconButton(
+      host.el('places', 'places-fold'),
+      host.el('places', 'places-fold-icon'),
+      isFolded ? 'chevron-down' : 'chevron-up',
+      'control',
+    );
     host.el('places', 'places-content')?.setProperties({ display: isFolded ? 'none' : 'flex' });
 
     for (let i = 0; i < PLACES_PER_PAGE; i++) {
@@ -94,8 +97,8 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     const page = host.text('places', 'places-page');
     page?.setProperties({ text: view.pageText });
     paintText(page, 'secondary');
-    paintButton(host.el('places', 'places-prev'), host.text('places', 'places-prev-label'), 'control');
-    paintButton(host.el('places', 'places-next'), host.text('places', 'places-next-label'), 'control');
+    paintIconButton(host.el('places', 'places-prev'), host.el('places', 'places-prev-icon'), 'chevron-left', 'control');
+    paintIconButton(host.el('places', 'places-next'), host.el('places', 'places-next-icon'), 'chevron-right', 'control');
 
     // The grip sits above the panel, so it has to move whenever the panel's height changes.
     const next = `${isFolded}|${view.rows.length}|${pager}`;

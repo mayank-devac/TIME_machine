@@ -268,7 +268,7 @@ describe('places list', () => {
     expect(placesTitle(10, false, 0)).toBe('ZOOM IN TO FIND PLACES');
     expect(placesTitle(15, true, 0)).toBe('LOOKING NEARBY...');
     expect(placesTitle(15, false, 0)).toBe('NO PAST IMAGERY NEARBY');
-    expect(placesTitle(15, false, 3)).toBe('NEARBY, WITH PAST IMAGERY');
+    expect(placesTitle(15, false, 3)).toBe('NEARBY STREET VIEW');
   });
 
   it('shows the list in the room and in street', async () => {

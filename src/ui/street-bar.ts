@@ -5,7 +5,7 @@
  */
 import { MAX_YEAR_CHIPS, deriveHud, yearChipAction, yearChips } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
-import { paintBox, paintButton, paintText } from './panel-style.js';
+import { paintBox, paintButton, paintIconButton } from './panel-style.js';
 
 export function createStreetBar(host: Host, yearsKnown: () => boolean): PanelModule {
   const { bus, state } = host.ctx;
@@ -20,11 +20,6 @@ export function createStreetBar(host: Host, yearsKnown: () => boolean): PanelMod
     if (!view.showBar) return;
 
     paintBox(host.el('bar', 'bar-root'), 'panel');
-    paintBox(host.el('bar', 'year-root'), view.yearIsPast ? 'past' : 'control');
-    const year = host.text('bar', 'year-text');
-    year?.setProperties({ text: view.yearText });
-    paintText(year, view.yearIsPast ? 'past' : 'primary');
-
     chips = yearChips(inputs());
     for (let i = 0; i < MAX_YEAR_CHIPS; i++) {
       const chip = chips[i];
@@ -37,14 +32,20 @@ export function createStreetBar(host: Host, yearsKnown: () => boolean): PanelMod
     }
     host.el('bar', 'years-root')?.setProperties({ display: chips.length > 0 ? 'flex' : 'none' });
 
-    const timeLabel = host.text('bar', 'time-btn-label');
-    timeLabel?.setProperties({ text: view.timeButtonLabel });
-    paintButton(host.el('bar', 'time-btn'), timeLabel, view.timeButtonEnabled ? 'primary' : 'disabled');
+    paintIconButton(
+      host.el('bar', 'time-btn'),
+      host.el('bar', 'time-btn-icon'),
+      state.get().timeOn ? 'history' : 'clock',
+      view.timeButtonEnabled ? 'primary' : 'disabled',
+    );
 
-    for (const id of ['map-btn', 'portal-btn']) {
+    for (const [id, icon] of [
+      ['map-btn', 'map'],
+      ['portal-btn', 'portal'],
+    ] as const) {
       const btn = host.el('bar', id);
       btn?.setProperties({ display: view.showNavButtons ? 'flex' : 'none' });
-      paintButton(btn, host.text('bar', `${id}-label`), 'control');
+      paintIconButton(btn, host.el('bar', `${id}-icon`), icon, 'control');
     }
     if (navShown !== view.showNavButtons) {
       navShown = view.showNavButtons;

@@ -59,13 +59,13 @@ function boxColours(t: Readonly<Tokens>, fill: Fill): BoxColours {
     case 'disabled':
       return { backgroundColor: withAlpha(t.surface, 0.45), borderColor: withAlpha(t.border, 0.45) };
     case 'past':
-      return { backgroundColor: mix(t.surface, t.warning, 0.22), borderColor: t.warning };
+      return { backgroundColor: withAlpha(mix(t.surface, t.warning, 0.22), 0.7), borderColor: t.warning };
     case 'notice':
-      return { backgroundColor: mix(opaque(t.background), t.warning, 0.28), borderColor: t.warning };
+      return { backgroundColor: withAlpha(mix(opaque(t.background), t.warning, 0.28), 0.75), borderColor: t.warning };
     case 'danger':
-      return { backgroundColor: mix(opaque(t.background), t.danger, 0.32), borderColor: t.danger };
+      return { backgroundColor: withAlpha(mix(opaque(t.background), t.danger, 0.32), 0.75), borderColor: t.danger };
     case 'listening':
-      return { backgroundColor: mix(t.surface, t.success, 0.35), borderColor: t.success };
+      return { backgroundColor: withAlpha(mix(t.surface, t.success, 0.35), 0.75), borderColor: t.success };
     case 'knobOn':
       return { backgroundColor: t.onAccent, borderColor: t.onAccent };
     case 'knobOff':
@@ -84,7 +84,7 @@ function inkColour(t: Readonly<Tokens>, ink: Ink): string {
     case 'onAccent':
       return t.onAccent;
     case 'past':
-      return t.warning;
+      return t.textPrimary;
     case 'disabled':
       return withAlpha(t.textSecondary, 0.6);
   }
@@ -152,6 +152,40 @@ export function paintText(el: El | null, ink: Ink): void {
   setProps(el, { color: inkColour(currentTokens(), ink) });
 }
 
+/** Icon files in `public/assets/icons/`. White fills; the tint comes from `color`. */
+export type IconName =
+  | 'chevron-up'
+  | 'chevron-down'
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'close'
+  | 'backspace'
+  | 'space'
+  | 'search'
+  | 'map'
+  | 'portal'
+  | 'clock'
+  | 'history'
+  | 'mic'
+  | 'stop'
+  | 'info';
+
+const iconUrl = (name: IconName): string => `${import.meta.env.BASE_URL}assets/icons/${name}.svg`;
+const icons = new Map<El, { name: IconName; ink: Ink }>();
+
+/** Show an icon in a `<svg>` element, tinted like text of the given role. */
+export function paintIcon(el: El | null, name: IconName, ink: Ink): void {
+  if (!el) return;
+  icons.set(el, { name, ink });
+  setProps(el, { src: iconUrl(name), color: inkColour(currentTokens(), ink) });
+}
+
+/** Paint a button box and the icon inside it. */
+export function paintIconButton(box: El | null, icon: El | null, name: IconName, fill: Fill): void {
+  paintBox(box, fill);
+  paintIcon(icon, name, inkOn(fill));
+}
+
 /** Paint a button and its label in one go. */
 export function paintButton(box: El | null, label: El | null, fill: Fill): void {
   paintBox(box, fill);
@@ -193,10 +227,12 @@ export function repaintAll(): void {
   for (const [el, s] of boxes) renderBox(el, s);
   const t = currentTokens();
   for (const [el, ink] of inks) setProps(el, { color: inkColour(t, ink) });
+  for (const [el, i] of icons) setProps(el, { color: inkColour(t, i.ink) });
 }
 
 /** Forget all elements (the HUD is being disposed). */
 export function forgetStyles(): void {
   boxes.clear();
   inks.clear();
+  icons.clear();
 }

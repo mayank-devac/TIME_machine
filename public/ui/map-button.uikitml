@@ -1,3 +1,0 @@
-<div id="map-btn" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 30; height: 10; background-color: #ffffff1f; border-color: #ffffff38; border-width: 0.3; border-radius: 5; cursor: pointer;">
-  <span id="map-btn-label" style="font-size: 3.2; font-weight: medium; color: #ffffff; text-align: center;">MAP</span>
-</div>

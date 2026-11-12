@@ -1,10 +1,10 @@
 <style>
   .panel {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
-    width: 110;
+    gap: 2;
     padding-left: 4;
     padding-right: 4;
     padding-top: 2;
@@ -13,10 +13,28 @@
     border-radius: 4;
   }
   .caption {
+    width: 100;
     font-size: 2.6;
-    text-align: center;
+    font-weight: medium;
+    text-align: left;
+  }
+  .info {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 7;
+    height: 7;
+    border-width: 0.3;
+    border-radius: 3.5;
+    cursor: pointer;
+  }
+  .icon {
+    width: 4;
+    height: 4;
   }
 </style>
 <div id="credits-root" class="panel">
+  <div id="credits-info" class="info"><svg id="credits-info-icon" class="icon"></svg></div>
   <span id="credits-text" class="caption">Imagery (c) Mapillary contributors | Map data (c) OpenStreetMap contributors</span>
 </div>

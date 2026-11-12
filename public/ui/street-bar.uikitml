@@ -92,17 +92,16 @@
     align-items: center;
     justify-content: center;
     gap: 2;
-    width: 90;
   }
   .chip {
     display: none;
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    width: 9;
-    height: 7;
+    width: 12.5;
+    height: 9;
     border-width: 0.3;
-    border-radius: 3.5;
+    border-radius: 4.5;
     cursor: pointer;
   }
   .actions {
@@ -111,24 +110,31 @@
     align-items: center;
     justify-content: center;
     gap: 2;
-    width: 90;
+  }
+  .chip-text {
+    font-size: 3.6;
+    font-weight: medium;
+    text-align: center;
+  }
+  .icon {
+    width: 5;
+    height: 5;
   }
 </style>
-<div id="bar-root" class="panel" style="width: 96;">
-  <div id="year-root" class="year"><span id="year-text" class="year-text">2025</span></div>
+<div id="bar-root" class="panel">
   <div id="years-root" class="chips">
-      <div id="year-chip-0" class="chip"><span id="year-chip-label-0" class="small">2020</span></div>
-      <div id="year-chip-1" class="chip"><span id="year-chip-label-1" class="small">2020</span></div>
-      <div id="year-chip-2" class="chip"><span id="year-chip-label-2" class="small">2020</span></div>
-      <div id="year-chip-3" class="chip"><span id="year-chip-label-3" class="small">2020</span></div>
-      <div id="year-chip-4" class="chip"><span id="year-chip-label-4" class="small">2020</span></div>
-      <div id="year-chip-5" class="chip"><span id="year-chip-label-5" class="small">2020</span></div>
-      <div id="year-chip-6" class="chip"><span id="year-chip-label-6" class="small">2020</span></div>
-      <div id="year-chip-7" class="chip"><span id="year-chip-label-7" class="small">2020</span></div>
+      <div id="year-chip-0" class="chip"><span id="year-chip-label-0" class="chip-text">2020</span></div>
+      <div id="year-chip-1" class="chip"><span id="year-chip-label-1" class="chip-text">2020</span></div>
+      <div id="year-chip-2" class="chip"><span id="year-chip-label-2" class="chip-text">2020</span></div>
+      <div id="year-chip-3" class="chip"><span id="year-chip-label-3" class="chip-text">2020</span></div>
+      <div id="year-chip-4" class="chip"><span id="year-chip-label-4" class="chip-text">2020</span></div>
+      <div id="year-chip-5" class="chip"><span id="year-chip-label-5" class="chip-text">2020</span></div>
+      <div id="year-chip-6" class="chip"><span id="year-chip-label-6" class="chip-text">2020</span></div>
+      <div id="year-chip-7" class="chip"><span id="year-chip-label-7" class="chip-text">2020</span></div>
   </div>
   <div class="actions">
-    <div id="map-btn" class="btn" style="width: 22;"><span id="map-btn-label" class="label">MAP</span></div>
-    <div id="time-btn" class="btn" style="width: 40;"><span id="time-btn-label" class="label">TIME MACHINE</span></div>
-    <div id="portal-btn" class="btn" style="width: 22;"><span id="portal-btn-label" class="label">PORTAL</span></div>
+    <div id="map-btn" class="btn" style="width: 18;"><svg id="map-btn-icon" class="icon"></svg></div>
+    <div id="time-btn" class="btn" style="width: 18;"><svg id="time-btn-icon" class="icon"></svg></div>
+    <div id="portal-btn" class="btn" style="width: 18;"><svg id="portal-btn-icon" class="icon"></svg></div>
   </div>
 </div>

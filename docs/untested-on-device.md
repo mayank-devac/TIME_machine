@@ -41,3 +41,8 @@ Add to this list; do not remove items without a device test.
   "NO MIC" and falls back to the keys when it is missing. Speech audio goes to the browser vendor's
   service. Also untested: reach and size of the 5.4 cm keys with a real ray or pinch, panel
   placement (30 degrees right, 1.5 m) and the Photon lookup over Wi-Fi.
+- HUD icon buttons and green theme (Track G): the text labels on the street bar, fold, pager and
+  search buttons became tinted `<svg>` icons (`public/assets/icons/`), and the palette changed to
+  black/white with green accents. Not seen rendered: the managed browser could not create a WebGL
+  context when checked, so icon size, tint in both themes, the 8-chip year row width (114 cm) and
+  legibility of the new colours at headset distance are unjudged.

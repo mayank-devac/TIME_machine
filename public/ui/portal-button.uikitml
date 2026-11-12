@@ -1,3 +1,0 @@
-<div id="portal-btn" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 30; height: 10; background-color: #2ee6d633; border-color: #7ff5ea99; border-width: 0.3; border-radius: 5; cursor: pointer;">
-  <span id="portal-btn-label" style="font-size: 3.2; font-weight: medium; color: #e6fffc; text-align: center;">PORTAL</span>
-</div>

@@ -8,7 +8,7 @@
 import type { Prefs } from '../contracts.js';
 import { startsCollapsed } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
-import { paintBox, paintButton, paintText } from './panel-style.js';
+import { paintBox, paintIconButton, paintText } from './panel-style.js';
 
 interface Switch {
   /** Id suffix in `settings.uikitml`. */
@@ -32,9 +32,12 @@ export function createSettingsPanel(host: Host): PanelModule {
     host.setVisible('settings', true); // reachable in every mode
     paintBox(host.el('settings', 'settings-root'), 'panel');
     paintText(host.text('settings', 'settings-title'), 'secondary');
-    const foldLabel = host.text('settings', 'settings-fold-label');
-    foldLabel?.setProperties({ text: folded ? '+' : '-' });
-    paintButton(host.el('settings', 'settings-fold'), foldLabel, 'control');
+    paintIconButton(
+      host.el('settings', 'settings-fold'),
+      host.el('settings', 'settings-fold-icon'),
+      folded ? 'chevron-down' : 'chevron-up',
+      'control',
+    );
     host.el('settings', 'settings-content')?.setProperties({ display: folded ? 'none' : 'flex' });
 
     const p = prefs.get();

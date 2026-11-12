@@ -19,7 +19,7 @@
   }
   .title {
     font-size: 2.8;
-    font-weight: medium;
+    font-weight: bold;
     text-align: left;
   }
   .fold {
@@ -71,11 +71,15 @@
     border-radius: 4;
     cursor: pointer;
   }
+.icon {
+    width: 4;
+    height: 4;
+  }
 </style>
 <div id="places-root" class="panel" style="width: 62;">
   <div class="header" style="width: 56;">
     <span id="places-title" class="title">PLACES WITH PAST IMAGERY</span>
-    <div id="places-fold" class="fold"><span id="places-fold-label" class="label">-</span></div>
+    <div id="places-fold" class="fold"><svg id="places-fold-icon" class="icon"></svg></div>
   </div>
   <div id="places-content" class="content">
     <div id="place-row-0" class="row" style="width: 56;">
@@ -99,9 +103,9 @@
       <span id="place-years-4" class="small">2016-2025</span>
     </div>
     <div id="places-pager" class="header" style="width: 56;">
-      <div id="places-prev" class="btn" style="width: 16;"><span id="places-prev-label" class="small">PREV</span></div>
+      <div id="places-prev" class="btn" style="width: 10;"><svg id="places-prev-icon" class="icon"></svg></div>
       <span id="places-page" class="small">1 / 1</span>
-      <div id="places-next" class="btn" style="width: 16;"><span id="places-next-label" class="small">NEXT</span></div>
+      <div id="places-next" class="btn" style="width: 10;"><svg id="places-next-icon" class="icon"></svg></div>
     </div>
   </div>
 </div>

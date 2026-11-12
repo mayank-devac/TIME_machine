@@ -21,6 +21,12 @@ export interface LandingCallbacks {
 const STREET_VIEW_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="2.2"/><path d="M12 10.5v5M9 12.5l3-2 3 2M10 20l2-4.5 2 4.5"/><path d="M4 17c-1 .8-1.5 1.6-1.5 2.5C2.5 21.4 6.8 23 12 23s9.5-1.6 9.5-3.5c0-.9-.5-1.7-1.5-2.5" stroke-width="1.4"/></svg>';
 
+// Fold chevrons for the card's hide / show toggle. Filled with the button's text colour.
+const CHEVRON_UP =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>';
+const CHEVRON_DOWN =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
+
 /**
  * Every colour below is a `--tm-*` custom property written from the theme tokens (see
  * `cssVars` in `src/theme.ts`); translucent shades are mixed from them, never spelled out.
@@ -41,15 +47,16 @@ const CSS = `
   box-shadow:0 8px 32px var(--shade);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
 .tm-landing .tm-head{display:flex;align-items:center;gap:10px}
 .tm-landing h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:500;letter-spacing:.01em;line-height:1.2}
-.tm-landing .tm-toggle{flex:none;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--wash);color:var(--tm-text-secondary);font-size:12px}
+.tm-landing .tm-toggle{flex:none;width:28px;height:28px;padding:0;display:grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--wash);color:var(--tm-text-secondary)}
+.tm-landing .tm-toggle svg{width:20px;height:20px;fill:currentColor}
 .tm-landing .tm-toggle:hover{background:var(--tm-hover-fill);border-color:var(--tm-hover);color:var(--tm-text-primary)}
 .tm-landing .tm-body{display:flex;flex-direction:column;gap:10px;min-height:0}
 .tm-landing .tm-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--tm-text-secondary);font-size:13px}
 .tm-landing .tm-steps li{display:flex;gap:10px;align-items:baseline}
 .tm-landing .tm-steps i{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:500;color:var(--tm-on-accent);background:var(--tm-accent)}
 .tm-landing .tm-steps b{font-weight:500;color:var(--tm-text-primary)}
-.tm-landing .tm-status{color:var(--tm-success);font-size:13px}
-.tm-landing .tm-status[data-error]{color:var(--tm-danger)}
+.tm-landing .tm-status{color:var(--tm-text-primary);font-size:13px}
+.tm-landing .tm-status[data-error]{color:var(--tm-text-primary);font-weight:600}
 .tm-landing .tm-status:empty{display:none}
 .tm-landing .tm-credit{margin-top:2px;font-size:10.5px;line-height:1.5;color:var(--tm-text-secondary)}
 
@@ -80,7 +87,7 @@ const CSS = `
 .tm-rail .tm-place:hover{background:var(--tm-hover-fill)}
 .tm-rail .tm-name{font-size:14px;font-weight:500;line-height:1.25}
 .tm-rail .tm-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tm-text-secondary);line-height:1.25}
-.tm-rail .tm-years{padding:0 7px;border-radius:999px;font-size:11px;color:var(--tm-warning);border:1px solid color-mix(in srgb,var(--tm-warning) 45%,transparent)}
+.tm-rail .tm-years{padding:0 7px;border-radius:999px;font-size:11px;color:var(--tm-accent);border:1px solid color-mix(in srgb,var(--tm-accent) 45%,transparent)}
 .tm-rail .tm-icon{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;color:var(--tm-on-accent);background:var(--tm-accent);border:1px solid var(--tm-accent)}
 .tm-rail .tm-icon:hover{border-color:var(--tm-hover);transform:scale(1.06)}
 .tm-rail .tm-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -123,7 +130,7 @@ export class LandingPage {
     root.innerHTML = `
       <div class="tm-head">
         <h1>Street View Time Machine</h1>
-        <button type="button" class="tm-toggle" aria-expanded="true" title="Hide">Hide</button>
+        <button type="button" class="tm-toggle" aria-expanded="true" title="Hide" aria-label="Hide">${CHEVRON_UP}</button>
       </div>
       <div class="tm-body">
         <form class="tm-search" role="search" autocomplete="off">
@@ -132,7 +139,7 @@ export class LandingPage {
         </form>
         <ol class="tm-steps">
           <li><i>1</i><span>Pick a place from the strip below.</span></li>
-          <li><i>2</i><span>Press <b>Enter XR</b> to stand at the map table.</span></li>
+          <li><i>2</i><span>Explore Map</span></li>
           <li><i>3</i><span>Tap a glowing street to step into it.</span></li>
         </ol>
         <div class="tm-status" role="status" aria-live="polite"></div>
@@ -153,8 +160,9 @@ export class LandingPage {
     toggle.addEventListener('click', () => {
       this.collapsed = !this.collapsed;
       this.body.style.display = this.collapsed ? 'none' : 'flex';
-      toggle.textContent = this.collapsed ? 'Show' : 'Hide';
+      toggle.innerHTML = this.collapsed ? CHEVRON_DOWN : CHEVRON_UP;
       toggle.title = this.collapsed ? 'Show' : 'Hide';
+      toggle.setAttribute('aria-label', toggle.title);
       toggle.setAttribute('aria-expanded', String(!this.collapsed));
     });
 

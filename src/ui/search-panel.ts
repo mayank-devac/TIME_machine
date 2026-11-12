@@ -6,7 +6,7 @@ import { searchPlaces } from '../map/photon.js';
 import type { PlaceResult } from '../map/photon.js';
 import { startsCollapsed } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
-import { paintBox, paintButton, paintText } from './panel-style.js';
+import { paintBox, paintButton, paintIconButton, paintText } from './panel-style.js';
 import {
   KEY_IDS,
   SEARCH_RESULTS,
@@ -41,9 +41,12 @@ export function createSearchPanel(host: Host): PanelModule {
 
     paintBox(host.el('search', 'search-root'), 'panel');
     paintText(host.text('search', 'search-title'), 'secondary');
-    const foldLabel = host.text('search', 'search-fold-label');
-    foldLabel?.setProperties({ text: folded ? '+' : '-' });
-    paintButton(host.el('search', 'search-fold'), foldLabel, 'control');
+    paintIconButton(
+      host.el('search', 'search-fold'),
+      host.el('search', 'search-fold-icon'),
+      folded ? 'chevron-down' : 'chevron-up',
+      'control',
+    );
     host.el('search', 'search-content')?.setProperties({ display: folded ? 'none' : 'flex' });
 
     const shown = displayText(query, !voice.listening);
@@ -57,21 +60,25 @@ export function createSearchPanel(host: Host): PanelModule {
     status?.setProperties({ text: note });
     paintText(status, 'secondary');
 
-    const micLabel = host.text('search', 'search-mic-label');
-    micLabel?.setProperties({ text: voice.listening ? 'STOP' : 'MIC' });
-    paintButton(
+    paintIconButton(
       host.el('search', 'search-mic'),
-      micLabel,
+      host.el('search', 'search-mic-icon'),
+      voice.listening ? 'stop' : 'mic',
       !voice.supported ? 'disabled' : voice.listening ? 'listening' : 'control',
     );
-    paintButton(host.el('search', 'search-clear'), host.text('search', 'search-clear-label'), 'control');
-    paintButton(
+    paintIconButton(host.el('search', 'search-clear'), host.el('search', 'search-clear-icon'), 'close', 'control');
+    paintIconButton(
       host.el('search', 'search-enter'),
-      host.text('search', 'search-enter-label'),
+      host.el('search', 'search-enter-icon'),
+      'search',
       canSearch(query) ? 'primary' : 'disabled',
     );
-    paintButton(host.el('search', 'search-space'), host.text('search', 'search-space-label'), 'control');
+    paintIconButton(host.el('search', 'search-space'), host.el('search', 'search-space-icon'), 'space', 'control');
     for (const key of KEY_IDS) {
+      if (key === 'BACK') {
+        paintIconButton(host.el('search', 'search-key-BACK'), host.el('search', 'search-key-icon-BACK'), 'backspace', 'control');
+        continue;
+      }
       paintButton(host.el('search', `search-key-${key}`), host.text('search', `search-key-label-${key}`), 'control');
     }
 

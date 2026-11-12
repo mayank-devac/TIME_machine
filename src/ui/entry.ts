@@ -1,5 +1,5 @@
 import { Box3, Quaternion, RayInteractable, Vector3, createSystem } from '@iwsdk/core';
-import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
+import type { Entity, Mesh, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
 import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
 import { readHead } from '../head.js';
@@ -8,7 +8,7 @@ import { HudTag } from '../track-components.js';
 import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotPosition, slotSpec, yawFromForward } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
-import { attachHover, forgetStyles, paintBox, paintText, repaintAll } from './panel-style.js';
+import { attachHover, forgetStyles, paintBox, paintIconButton, paintText, repaintAll } from './panel-style.js';
 import type { El, Fill } from './panel-style.js';
 import { createPlacesPanel } from './places-panel.js';
 import { createSearchPanel } from './search-panel.js';
@@ -31,7 +31,7 @@ const PANELS: Readonly<Record<HudSlot, PanelSpec>> = {
   places: { asset: 'hud-places', root: 'places-root', interactive: true, draggable: true },
   search: { asset: 'hud-search', root: 'search-root', interactive: true, draggable: true },
   settings: { asset: 'hud-settings', root: 'settings-root', interactive: true, draggable: true },
-  credits: { asset: 'hud-credits', root: 'credits-root', interactive: false, draggable: true },
+  credits: { asset: 'hud-credits', root: 'credits-root', interactive: true, draggable: true },
   status: { asset: 'hud-status', root: 'status-root', interactive: false, draggable: false },
 };
 
@@ -48,6 +48,8 @@ const RECENTRE_AFTER_XR_MS = 700;
 const GRIP_SETTLE_MS = 150;
 /** Gap between a panel's top edge and its grip, metres. */
 const GRIP_GAP_M = 0.03;
+/** Top edge used when a panel cannot be measured, metres above its centre. */
+const GRIP_FALLBACK_TOP_M = 0.06;
 const SPINNER_FRAMES = ['Loading', 'Loading.', 'Loading..', 'Loading...'];
 
 /**
@@ -77,6 +79,8 @@ export const createTrack: TrackFactory = async (ctx) => {
   let photos: ArchivePhoto[] = [];
   let toast: Toast | null = null;
   let disposed = false;
+  let creditsFolded = false;
+  let creditsShape: boolean | null = null;
 
   // Scratch objects, allocated once.
   const head = new Vector3();
@@ -150,14 +154,44 @@ export const createTrack: TrackFactory = async (ctx) => {
     savedQuat.copy(rig.quaternion);
     rig.quaternion.identity();
     rig.updateMatrixWorld(true);
-    box3.setFromObject(root);
+    const measured = measureTop(root);
     rig.getWorldPosition(rigPos);
     rig.quaternion.copy(savedQuat);
     rig.updateMatrixWorld(true);
-    const top = box3.max.y - rigPos.y;
+    const top = measured - rigPos.y;
     // Before the first layout the box is empty or wild; keep the grip close in that case.
     const sane = Number.isFinite(top) && top > 0 && top < 1.5;
-    panel.rig.placeGrip(0, (sane ? top : 0.06) + GRIP_GAP_M, 0);
+    if (!sane) {
+      console.warn(
+        `[ui] grip for "${slot}" could not be measured (top=${top}); using the fallback offset of ${GRIP_FALLBACK_TOP_M} m.`,
+      );
+    }
+    panel.rig.placeGrip(0, (sane ? top : GRIP_FALLBACK_TOP_M) + GRIP_GAP_M, 0);
+  }
+
+  /**
+   * World-space top edge of a panel. Walks the meshes itself instead of `Box3.setFromObject`,
+   * which throws on UIKit children whose geometry has no bounds (SVG icons, empty text).
+   * Returns NaN when nothing could be measured.
+   */
+  function measureTop(root: Object3D): number {
+    let top = Number.NEGATIVE_INFINITY;
+    try {
+      root.traverse((obj) => {
+        const mesh = obj as Mesh;
+        const geometry = mesh.geometry;
+        if (!mesh.isMesh || !geometry) return;
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        const bb = geometry.boundingBox;
+        if (!bb || bb.isEmpty()) return;
+        box3.copy(bb).applyMatrix4(mesh.matrixWorld);
+        if (Number.isFinite(box3.max.y) && box3.max.y > top) top = box3.max.y;
+      });
+    } catch (err) {
+      console.warn('[ui] panel bounds could not be measured; the grip falls back to a fixed offset.', err);
+      return Number.NaN;
+    }
+    return top === Number.NEGATIVE_INFINITY ? Number.NaN : top;
   }
 
   /**
@@ -220,10 +254,20 @@ export const createTrack: TrackFactory = async (ctx) => {
     const view = deriveHud({ state: state.get(), yearsKnown });
     host.setVisible('credits', view.showCredits);
     paintBox(host.el('credits', 'credits-root'), 'panel');
+    paintIconButton(host.el('credits', 'credits-info'), host.el('credits', 'credits-info-icon'), 'info', 'control');
     const el = host.text('credits', 'credits-text');
-    el?.setProperties({ text: composeCredits(state.get().pano, photos) });
+    el?.setProperties({ text: composeCredits(state.get().pano, photos), display: creditsFolded ? 'none' : 'flex' });
     paintText(el, 'secondary');
+    if (creditsShape !== creditsFolded) {
+      creditsShape = creditsFolded;
+      host.resized('credits');
+    }
   };
+  // The info button folds the attribution to the button alone; it is never removed.
+  host.control(host.el('credits', 'credits-info'), 'default', () => {
+    creditsFolded = !creditsFolded;
+    refreshCredits();
+  });
 
   function refreshStatus(): void {
     const view = deriveHud({ state: state.get(), yearsKnown });

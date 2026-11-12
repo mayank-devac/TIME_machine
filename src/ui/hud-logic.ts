@@ -206,7 +206,7 @@ export function placesTitle(zoom: number | null, loading: boolean, count: number
   if (zoom !== null && zoom < PLACES_MIN_ZOOM) return 'ZOOM IN TO FIND PLACES';
   // While loading, the three dots cycle 1 → 2 → 3 (frame is taken modulo 3, 0 counts as 3).
   if (loading) return `LOOKING NEARBY${'.'.repeat(((dotFrame + 2) % 3) + 1)}`;
-  return count === 0 ? 'NO PAST IMAGERY NEARBY' : 'NEARBY, WITH PAST IMAGERY';
+  return count === 0 ? 'NO PAST IMAGERY NEARBY' : 'NEARBY STREET VIEW';
 }
 
 /** Pages `places` (already nearest first) five at a time. */
