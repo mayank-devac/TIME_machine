@@ -1,4 +1,6 @@
 import { InputComponent, Quaternion, Vector3, VisibilityState, createSystem } from '@iwsdk/core';
+import type { PrefsAccess } from '../contracts.js';
+import { DEFAULT_PREFS } from '../prefs.js';
 import { TIME } from './constants.js';
 import { DialTracker, WheelAccumulator, swingAboutAxis, twistAboutAxis } from './dial.js';
 import { CONTROLLER_PRESS, HAND_PRESS, PressDebouncer } from './input-filter.js';
@@ -15,7 +17,7 @@ type Side = 'left' | 'right';
  * Samples input once per frame and hands it to `TimeMachine.frame()`.
  *
  * In an XR session (headset or the IWER emulator):
- *  - lens hand: right by default, left when the settings switch says so (`Prefs.lensHand`);
+ *  - lens hand: `Prefs.lensHand` (a settings switch); the other hand is the dial;
  *  - lens direction: from the head to the lens hand's GRIP pose (where the hand or controller
  *    physically is), not its target ray (where it points);
  *  - push-through: hold a pinch, or the trigger, on the lens hand;
@@ -27,7 +29,8 @@ type Side = 'left' | 'right';
  *  - push-through: hold Space.
  */
 export class TimeLensSystem extends createSystem({}) {
-  private tm: TimeMachine | null = null;
+  /** What the system drives and reads; null while unbound (before `createTrack`, after dispose). */
+  private bound: { tm: TimeMachine; prefs: PrefsAccess } | null = null;
   private head!: Vector3;
   private hand!: Vector3;
   private forward!: Vector3;
@@ -42,7 +45,7 @@ export class TimeLensSystem extends createSystem({}) {
   private wheel!: WheelAccumulator;
   private pushFilter!: PressDebouncer;
   private dialFilter!: PressDebouncer;
-  private lastLensSide: Side = TIME.lensHand;
+  private lastLensSide: Side = DEFAULT_PREFS.lensHand;
   private stickArmed: Record<Side, boolean> = { left: true, right: true };
   private mouseX = 0;
   private mouseY = 0;
@@ -53,12 +56,13 @@ export class TimeLensSystem extends createSystem({}) {
   private rectHeight = 0;
   private rectStale = true;
 
-  /** Which hand carries the lens, read every frame so the settings switch applies at once. */
-  private lensHand: () => Side = () => TIME.lensHand;
+  /** The lens hand is read from `prefs` every frame, so the settings switch applies at once. */
+  bind(tm: TimeMachine, prefs: PrefsAccess): void {
+    this.bound = { tm, prefs };
+  }
 
-  bind(tm: TimeMachine | null, lensHand?: () => Side): void {
-    this.tm = tm;
-    this.lensHand = lensHand ?? (() => TIME.lensHand);
+  unbind(): void {
+    this.bound = null;
   }
 
   init(): void {
@@ -89,7 +93,7 @@ export class TimeLensSystem extends createSystem({}) {
       this.mouseSeen = true;
     };
     const onWheel = (e: WheelEvent): void => {
-      if (this.tm?.machine.isActive) this.wheel.add(e.deltaY);
+      if (this.bound?.tm.machine.isActive) this.wheel.add(e.deltaY);
     };
     const onResize = (): void => {
       this.rectStale = true;
@@ -107,8 +111,8 @@ export class TimeLensSystem extends createSystem({}) {
   }
 
   update(delta: number, time: number): void {
-    const tm = this.tm;
-    if (!tm) return;
+    if (!this.bound) return;
+    const { tm, prefs } = this.bound;
     const active = tm.machine.isActive;
     let pushHeld = false;
     let dialHeld = false;
@@ -136,7 +140,7 @@ export class TimeLensSystem extends createSystem({}) {
         if (kb.getKeyDown('ArrowRight') || kb.getKeyDown('BracketRight')) yearDelta += 1;
       }
     } else {
-      const lensSide = this.sampleXr();
+      const lensSide = this.sampleXr(prefs.get().lensHand);
       if (lensSide !== this.lastLensSide) {
         // The lens moved to the other hand (one hand lost): old press state belongs to the
         // wrong hand, so start clean rather than carry a half-finished hold across.
@@ -205,13 +209,16 @@ export class TimeLensSystem extends createSystem({}) {
     ndcToDirection(nx, ny, cam.projectionMatrix.elements, cam.matrixWorld.elements, this.target);
   }
 
-  /** Hand lens. Returns the side that carries the lens this frame. */
-  private sampleXr(): Side {
+  /**
+   * Hand lens on `preferred`, or on the other hand while that one is not tracked. Returns the
+   * side that carries the lens this frame.
+   */
+  private sampleXr(preferred: Side): Side {
     const player = this.player;
     const xr = this.input.xr;
     player.head.getWorldPosition(this.head);
     player.head.getWorldDirection(this.forward).negate(); // Object3D "direction" is +Z; view is -Z
-    let side: Side = this.lensHand();
+    let side = preferred;
     if (xr.getPrimaryInputSource(side) === undefined) {
       const other: Side = side === 'right' ? 'left' : 'right';
       if (xr.getPrimaryInputSource(other) !== undefined) side = other;

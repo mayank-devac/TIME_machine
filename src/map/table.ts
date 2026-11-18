@@ -28,7 +28,7 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { config } from '../config.js';
-import type { CuratedSpot, EventBus, LatLng, MapTable, Prefs, SpotInfo } from '../contracts.js';
+import type { CuratedSpot, EventBus, LatLng, MapTable, Prefs, SpotInfo, Vec3Like } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
 import { setHoverTint } from '../hover.js';
 import { baseMapFor } from '../prefs.js';
@@ -53,8 +53,9 @@ import {
   zoomAround,
   zoomToRail,
   panByPixels,
-  tableHeightFor,
 } from './geo.js';
+import { DEFAULT_TABLE_POSE, tablePoseFor } from './placement.js';
+import type { TablePose } from './placement.js';
 import { RedrawScheduler } from './redraw.js';
 
 export const MAPILLARY_TILES = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}';
@@ -110,8 +111,6 @@ export function buildBaseStyle(kind: BaseMapKind): StyleSpecification {
 const COVERAGE_LAYER = 'mly-pano-sequences';
 /** How far from a coverage line a tap still snaps to it, canvas pixels (about 2 cm on the table). */
 const SNAP_PX = 48;
-/** Distance of the table centre in front of the standing player, metres (north is -Z). */
-const TABLE_Z = -1.15;
 /** Stop pending-tile redraws when MapLibre has reported no new data for this long, ms. */
 const PENDING_QUIET_MS = 3000;
 /** Margin of slab around the map: the rim strips sit on it front and back, the zoom rail on the right. */
@@ -294,26 +293,20 @@ export class TableMap implements MapTable {
 
   /** Put the table back at its default spot in front of the origin and forget any drag. */
   resetPlacement(): void {
-    placements.delete(TABLE_ID);
-    this.root.position.set(0, config.map.tableHeightM, TABLE_Z);
-    this.root.rotation.set(0, 0, 0);
+    this.applyPose(DEFAULT_TABLE_POSE);
   }
 
   /**
-   * Put the table in front of a viewer at `head` looking along `forward`, at a height that
-   * suits their eye level, so a seated user gets a lower table straight ahead of the chair.
-   * Forgets any drag. A hard snap, never animated.
+   * Put the table straight ahead of a viewer at `head` looking along `forward`, at a height
+   * that suits their eye level (seated or standing). Forgets any drag. A hard snap.
    */
-  placeForViewer(head: Readonly<Vector3>, forward: Readonly<Vector3>): void {
+  placeForViewer(head: Vec3Like, forward: Vec3Like): void {
+    this.applyPose(tablePoseFor(head, forward));
+  }
+
+  private applyPose({ position, yaw }: Readonly<TablePose>): void {
     placements.delete(TABLE_ID);
-    const flat = Math.hypot(forward.x, forward.z);
-    const yaw = flat > 1e-3 ? Math.atan2(-forward.x, -forward.z) : 0;
-    const d = -TABLE_Z;
-    this.root.position.set(
-      head.x - Math.sin(yaw) * d,
-      tableHeightFor(head.y, config.map.tableHeightM),
-      head.z - Math.cos(yaw) * d,
-    );
+    this.root.position.set(position.x, position.y, position.z);
     this.root.rotation.set(0, yaw, 0);
   }
 

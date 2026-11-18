@@ -25,6 +25,13 @@ export interface LatLng {
   lng: number;
 }
 
+/** A point or direction in world space, metres. */
+export interface Vec3Like {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface Pano extends LatLng {
   /** Mapillary image id (string; ids exceed 2^53 safe-integer comfort in some APIs). */
   id: string;
@@ -116,8 +123,6 @@ export interface SavedSession {
   label?: string;
   /** Lens year when the user left, or null when they were in the present. */
   year: number | null;
-  /** Date.now() when it was saved. */
-  savedAt: number;
 }
 
 /** Remembers where the user was so a later visit can continue there. */
@@ -155,6 +160,9 @@ export function initialAppState(): AppState {
  *  time:yearRequested Track G (year panel click). Track C jumps the dial to that year.
  *  time:committed     Track C when push-through completes (after `stage.commitPast`).
  *  archive:visible    Track F with the photos now on screen (empty array when hidden).
+ *  viewer:recentred   Orchestrator (`src/viewer.ts`) only: the viewer's frame changed (app start,
+ *                     XR session start or end, headset recentre, desktop C key). World-placed
+ *                     UI and the table snap in front of `head`; user drags are forgotten.
  *  mode:requested     Anyone (Track G buttons, Track E frame). The orchestrator's flow decides.
  *  mode:changed       Orchestrator flow only.
  *  prefs:changed      `PrefsStore` only, after a settings switch changed (already saved, theme
@@ -173,6 +181,7 @@ export interface EventMap {
   'time:yearRequested': { year: number };
   'time:committed': { year: number; pano: Pano };
   'archive:visible': { photos: ArchivePhoto[] };
+  'viewer:recentred': { head: Vec3Like; forward: Vec3Like; immersive: boolean };
   'mode:requested': { mode: Mode };
   'mode:changed': { mode: Mode; previous: Mode };
   'prefs:changed': Prefs;

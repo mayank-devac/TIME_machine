@@ -9,6 +9,7 @@
  *  - `halfWidth`, `halfHeight`  half the opening size, metres
  * The street is on the side opposite `normal`.
  */
+import { positionAround, yawFromForward } from '../head.js';
 
 export interface Vec3Like {
   x: number;
@@ -165,20 +166,9 @@ export function placeInFrontOfHead(
   drop: number,
   out: Placement,
 ): Placement {
-  let fx = forward.x;
-  let fz = forward.z;
-  const len = Math.hypot(fx, fz);
-  if (len < 1e-4) {
-    fx = 0;
-    fz = -1;
-  } else {
-    fx /= len;
-    fz /= len;
-  }
-  out.position.x = head.x + fx * distance;
-  out.position.y = head.y - drop;
-  out.position.z = head.z + fz * distance;
-  // Normal (+Z rotated by yaw) must point back at the head: (sin yaw, cos yaw) = (-fx, -fz).
-  out.yaw = Math.atan2(-fx, -fz);
+  // An object rotated by the heading yaw has its +Z (the window's room-side normal) facing
+  // back at the head.
+  out.yaw = yawFromForward(forward.x, forward.z);
+  positionAround(head, out.yaw, { leftDeg: 0, distance, dy: -drop }, out.position);
   return out;
 }

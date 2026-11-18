@@ -217,23 +217,3 @@ export function railToZoom(t: number): number {
 export function zoomToRail(zoom: number): number {
   return (clampZoom(zoom) - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
 }
-
-// ---------------------------------------------------------------------------------------------
-// Table placement for the viewer's eye height
-// ---------------------------------------------------------------------------------------------
-
-/** How far below the eyes the table top sits, metres (a standing 1.6 m eye line gives 0.85 m). */
-export const TABLE_BELOW_EYES_M = 0.75;
-/** Lowest and highest table top, metres above the floor. Seated eyes (~1.2 m) hit the floor. */
-export const TABLE_MIN_HEIGHT_M = 0.6;
-export const TABLE_MAX_HEIGHT_M = 1.1;
-
-/**
- * Table top height for a viewer whose eyes are `eyeY` metres above the floor, so a seated
- * user gets a lap-height table and a standing one a desk-height table. A missing or
- * implausible eye height (no pose yet, or a zero-height reference space) keeps `fallback`.
- */
-export function tableHeightFor(eyeY: number, fallback: number): number {
-  if (!Number.isFinite(eyeY) || eyeY < 0.5 || eyeY > 2.5) return fallback;
-  return Math.min(TABLE_MAX_HEIGHT_M, Math.max(TABLE_MIN_HEIGHT_M, eyeY - TABLE_BELOW_EYES_M));
-}

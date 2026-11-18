@@ -11,7 +11,7 @@ import {
 import type { Entity, World } from '@iwsdk/core';
 import type { ArchivePhoto } from '../contracts.js';
 import { DragRig, placements } from '../drag.js';
-import { readHead } from '../head.js';
+import { positionAround, readHead, yawFromForward } from '../head.js';
 import { currentTokens, onThemeChange, withAlpha } from '../theme.js';
 import { ArchivePhotoTag, HoverFx } from '../track-components.js';
 import type { PhotoRenderer } from './controller.js';
@@ -230,9 +230,8 @@ export function createFrameRenderer(world: World): PhotoRenderer {
         return [];
       }
       // Place around where the viewer is looking now. The camera itself is never touched.
-      world.camera.getWorldPosition(head);
-      world.camera.getWorldDirection(forward);
-      const yaw = Math.atan2(forward.x, -forward.z);
+      readHead(world, head, forward);
+      const yaw = yawFromForward(forward.x, forward.z);
       const angles = arcAngles(ok.length);
       ok.forEach(({ photo, bitmap }, i) => {
         const canvas = drawFrame(photo, bitmap, bitmap.width, bitmap.height);
@@ -250,13 +249,9 @@ export function createFrameRenderer(world: World): PhotoRenderer {
           rig.root.position.set(left.x, left.y, left.z);
           rig.root.lookAt(head);
         } else {
-          const a = yaw + (angles[i] * Math.PI) / 180;
+          // Arc angles are positive to the right; the shared offset is positive to the left.
           const lift = ok.length % 2 === 1 && angles[i] === 0 ? LAYOUT.centreLiftM : 0;
-          rig.root.position.set(
-            head.x + Math.sin(a) * LAYOUT.distanceM,
-            head.y + lift,
-            head.z - Math.cos(a) * LAYOUT.distanceM,
-          );
+          positionAround(head, yaw, { leftDeg: -angles[i], distance: LAYOUT.distanceM, dy: lift }, rig.root.position);
           // Face the viewer (the photo turns, not the user), staying upright.
           rig.root.lookAt(head.x, rig.root.position.y, head.z);
         }

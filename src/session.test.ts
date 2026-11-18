@@ -29,7 +29,7 @@ describe('loadSession', () => {
 
   it('reads a good save', () => {
     const s = storage({ [SESSION_KEY]: JSON.stringify({ lat: 1, lng: 2, label: 'Main St', year: 2016, savedAt: NOW }) });
-    expect(loadSession(s, NOW)).toEqual({ lat: 1, lng: 2, label: 'Main St', year: 2016, savedAt: NOW });
+    expect(loadSession(s, NOW)).toEqual({ lat: 1, lng: 2, label: 'Main St', year: 2016 });
   });
 });
 
@@ -80,6 +80,31 @@ describe('SessionStore', () => {
     // Only once: a later street's years do not move the lens again.
     bus.emit('time:yearsKnown', { years: [2014, 2024], earliest: 2014 });
     expect(seen).toHaveLength(3);
+  });
+
+  it('a resume is dropped when the user picks another spot before its years arrive', () => {
+    const bus = new EventBus();
+    const state = createAppState(bus);
+    const saved = JSON.stringify({ lat: 3, lng: 4, year: 2016, savedAt: NOW });
+    const store = new SessionStore(bus, state, storage({ [SESSION_KEY]: saved }), () => NOW);
+    const seen: string[] = [];
+    bus.on('time:toggled', () => seen.push('toggle'));
+    store.resume();
+    bus.emit('spot:selected', { lat: 9, lng: 9 }); // the user changed their mind
+    bus.emit('time:yearsKnown', { years: [2014, 2016, 2024], earliest: 2014 });
+    expect(seen).toEqual([]);
+  });
+
+  it('after a push-through, the committed year is kept', () => {
+    const bus = new EventBus();
+    const state = createAppState(bus);
+    const store = new SessionStore(bus, state, storage(), () => NOW);
+    bus.emit('spot:selected', { lat: 1, lng: 1 });
+    bus.emit('pano:shown', { pano: pano(1, 1) });
+    bus.emit('time:toggled', { on: true });
+    bus.emit('time:yearChanged', { year: 2016 });
+    bus.emit('time:committed', { year: 2016, pano: pano(1.00001, 1, '2016-04-01T00:00:00Z') });
+    expect(store.last()).toMatchObject({ lat: 1.00001, year: 2016 });
   });
 
   it('resume skips the year when the street no longer has an earlier one', () => {

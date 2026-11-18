@@ -10,7 +10,8 @@ The plan is `initial plan.md`. Project skills: `mapillary-api`, `pano-rendering`
 - **No Google services.** Imagery is Mapillary; the map is MapLibre with OpenFreeMap tiles.
 - **Folder ownership.** Each track edits only its own folder under `src/`. Shared files are
   changed only by the orchestrator: `src/index.ts`, `src/contracts.ts`, `src/config.ts`,
-  `src/components.ts`, `src/track-components.ts`, `src/assets.ts`, `src/flow.ts`, `src/mocks/`,
+  `src/components.ts`, `src/track-components.ts`, `src/assets.ts`, `src/flow.ts`, `src/head.ts`,
+  `src/viewer.ts`, `src/session.ts`, `src/prefs.ts`, `src/mocks/`,
   `src/spikes/`, `iwsdk.config.json`, `vite.config.ts`, `vitest.config.ts`, `package.json`,
   `public/scenes/`, `public/dev/`, `docs/spikes.md`, this file.
 - **Comfort.** Never move or rotate the viewer's camera smoothly. Hops fade to black, switch, fade in.

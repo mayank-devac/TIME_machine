@@ -22,8 +22,11 @@ New unknowns:
   reliable with real hand tracking, and whether near panels would be better, needs a device.
 - Real seated eye heights and the 0.75 m table drop / 0.6-1.1 m clamp (`src/map/geo.ts`):
   comfort and reach from an actual chair.
-- The table and HUD now follow the headset recentre (the reference space `reset` event).
-  Not exercised: the emulator has no recentre gesture.
+- The table and HUD now follow the headset recentre (the reference space `reset` event),
+  through one `viewer:recentred` event from `src/viewer.ts`. Not exercised: the emulator has
+  no recentre gesture. The 100 ms wait after a reset before reading the head pose is a guess.
+  (Re-checked 2026-11-18 after that refactor: seated head at (0.3, 1.2, 0.2) put the table at
+  (0.3, 0.6, -0.95) and the panels around the head; leaving XR put the table back.)
 - Settings unfolded (four rows) above Search at 30 degrees right: whether it overlaps an
   unfolded Search keyboard at headset scale.
 - Left-hand lens: only push-through was driven; the wrist dial on the right hand was not.

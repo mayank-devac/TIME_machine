@@ -1,11 +1,11 @@
-import { Mesh, MeshBasicMaterial, Quaternion, RayInteractable, RingGeometry, Vector3, createSystem } from '@iwsdk/core';
+import { Mesh, MeshBasicMaterial, RayInteractable, RingGeometry, Vector3, createSystem } from '@iwsdk/core';
 import type { Entity, Object3D, UIKit, UIKitMLAsset } from '@iwsdk/core';
 import type { ArchivePhoto, Track, TrackFactory, Unsubscribe } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
-import { readHead } from '../head.js';
+import { positionAround, readHead, yawFromForward } from '../head.js';
 import { currentTokens, onThemeChange } from '../theme.js';
 import { HudTag } from '../track-components.js';
-import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotPosition, slotSpec, yawFromForward } from './hud-logic.js';
+import { BusyScopes, ToastQueue, composeCredits, deriveHud, slotSpec } from './hud-logic.js';
 import type { HudSlot, Toast } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
 import { attachHover, forgetStyles, paintBox, paintIconButton, paintText, repaintAll } from './panel-style.js';
@@ -43,7 +43,6 @@ interface Panel {
   node: Object3D;
 }
 
-const RECENTRE_AFTER_XR_MS = 700;
 /** UIKit lays a panel out a few frames after a change; measure for the grip after this. */
 const GRIP_SETTLE_MS = 150;
 /** How long the grip stays visible after the pointer leaves its panel. */
@@ -78,7 +77,6 @@ export const createTrack: TrackFactory = async (ctx) => {
   const panels = new Map<HudSlot, Panel>();
   const gripTimers = new Map<HudSlot, ReturnType<typeof setTimeout>>();
   const busy = new BusyScopes();
-  let recentreTimer: ReturnType<typeof setTimeout> | null = null;
   let yearsKnown = false;
   let photos: ArchivePhoto[] = [];
   let toast: Toast | null = null;
@@ -89,7 +87,6 @@ export const createTrack: TrackFactory = async (ctx) => {
   // Scratch objects, allocated once.
   const head = new Vector3();
   const fwd = new Vector3();
-  const headQuat = new Quaternion();
   const pos = { x: 0, y: 0, z: 0 };
 
   const toasts = new ToastQueue({
@@ -208,16 +205,13 @@ export const createTrack: TrackFactory = async (ctx) => {
    */
   const recentre = (): void => {
     if (disposed) return;
-    const camera = world.camera;
-    camera.updateWorldMatrix(true, false);
-    camera.getWorldPosition(head);
-    camera.getWorldQuaternion(headQuat);
-    fwd.set(0, 0, -1).applyQuaternion(headQuat);
+    world.camera.updateWorldMatrix(true, false);
+    readHead(world, head, fwd);
     const yaw = yawFromForward(fwd.x, fwd.z);
     const mode = state.get().mode;
     for (const [slot, panel] of panels) {
       if (panel.rig && placements.has(panel.rig.id)) continue;
-      slotPosition(head, yaw, slotSpec(slot, mode), pos);
+      positionAround(head, yaw, slotSpec(slot, mode), pos);
       panel.node.position.set(pos.x, pos.y, pos.z);
       // Single-sided panels face +Z; lookAt on a non-camera points +Z at the target.
       panel.node.lookAt(head);
@@ -244,17 +238,9 @@ export const createTrack: TrackFactory = async (ctx) => {
   faceSystem.face = faceHead;
   faceSystem.spinner = spinner;
 
-  /** Forget where the user dragged the panels, then recentre (new XR session, desktop C key). */
+  /** Forget where the user dragged the panels (their old positions mean nothing in a new frame). */
   const resetPlacements = (): void => {
     for (const panel of panels.values()) if (panel.rig) placements.delete(panel.rig.id);
-  };
-
-  const scheduleRecentre = (delayMs: number): void => {
-    if (recentreTimer !== null) clearTimeout(recentreTimer);
-    recentreTimer = setTimeout(() => {
-      recentreTimer = null;
-      recentre();
-    }, delayMs);
   };
 
   // ---------------------------------------------------------------------------------------
@@ -356,6 +342,11 @@ export const createTrack: TrackFactory = async (ctx) => {
       refreshHud();
       recentre();
     }),
+    // A new frame of reference (session start or end, headset recentre, C key): drags are void.
+    bus.on('viewer:recentred', () => {
+      resetPlacements();
+      recentre();
+    }),
     bus.on('loading', ({ scope, busy: isBusy }) => {
       busy.set(scope, isBusy);
       refreshStatus();
@@ -366,49 +357,8 @@ export const createTrack: TrackFactory = async (ctx) => {
     }),
   );
 
-  // The world origin moves when an immersive session starts or ends, so dragged positions no
-  // longer mean anything: forget them and recentre. KeyC is the deliberate desktop recentre.
-  // All of these are hard snaps.
-  const xr = world.renderer.xr;
-  const onSessionChange = (): void => {
-    resetPlacements();
-    scheduleRecentre(RECENTRE_AFTER_XR_MS);
-  };
-  // The headset's own recentre (holding the Meta button) resets the reference space: follow it,
-  // so a seated user who turned their chair gets every panel back in front of them.
-  let space: XRReferenceSpace | null = null;
-  const onReset = (): void => {
-    resetPlacements();
-    scheduleRecentre(0);
-  };
-  const onSessionStart = (): void => {
-    onSessionChange();
-    space = xr.getReferenceSpace();
-    space?.addEventListener('reset', onReset);
-  };
-  const onSessionEnd = (): void => {
-    space?.removeEventListener('reset', onReset);
-    space = null;
-    onSessionChange();
-  };
-  xr.addEventListener('sessionstart', onSessionStart);
-  xr.addEventListener('sessionend', onSessionEnd);
-  offs.push(
-    () => xr.removeEventListener('sessionstart', onSessionStart),
-    () => xr.removeEventListener('sessionend', onSessionEnd),
-    () => space?.removeEventListener('reset', onReset),
-  );
-  const onKey = (event: KeyboardEvent): void => {
-    if (event.code !== 'KeyC' || event.repeat || event.ctrlKey || event.metaKey) return;
-    resetPlacements();
-    recentre();
-  };
-  window.addEventListener('keydown', onKey);
-  offs.push(() => window.removeEventListener('keydown', onKey));
-
   refreshHud();
-  recentre();
-  scheduleRecentre(300); // the camera pose is only trustworthy after the first frame
+  recentre(); // provisional; `viewer:recentred` follows once the head pose is trustworthy
 
   const track: Track & { recentre: () => void } = {
     name: 'ui',
@@ -419,7 +369,6 @@ export const createTrack: TrackFactory = async (ctx) => {
       offs.forEach((off) => off());
       world.unregisterSystem(PanelFaceSystem);
       toasts.dispose();
-      if (recentreTimer !== null) clearTimeout(recentreTimer);
       spinnerGeometry.dispose();
       spinnerMaterial.dispose();
       for (const t of gripTimers.values()) clearTimeout(t);

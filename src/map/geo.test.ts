@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampZoom,
-  tableHeightFor,
   isTap,
   latLngToPixel,
   MAX_ZOOM,
@@ -195,20 +194,5 @@ describe('smooth zoom', () => {
     expect(railToZoom(7)).toBe(MAX_ZOOM);
     expect(zoomToRail(railToZoom(0.3))).toBeCloseTo(0.3);
     expect(zoomToRail(99)).toBe(1);
-  });
-});
-
-describe('tableHeightFor', () => {
-  it('keeps the standing height for a 1.6 m eye line', () => {
-    expect(tableHeightFor(1.6, 0.85)).toBeCloseTo(0.85);
-  });
-  it('lowers the table for a seated viewer, within limits', () => {
-    expect(tableHeightFor(1.2, 0.85)).toBeCloseTo(0.6);
-    expect(tableHeightFor(1.45, 0.85)).toBeCloseTo(0.7);
-    expect(tableHeightFor(2.2, 0.85)).toBeCloseTo(1.1);
-  });
-  it('falls back when the eye height is missing or implausible', () => {
-    expect(tableHeightFor(0, 0.85)).toBe(0.85);
-    expect(tableHeightFor(Number.NaN, 0.85)).toBe(0.85);
   });
 });

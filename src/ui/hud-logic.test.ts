@@ -9,8 +9,6 @@ import {
   canUseTimeMachine,
   composeCredits,
   deriveHud,
-  slotPosition,
-  yawFromForward,
 } from './hud-logic.js';
 import type { HudInputs, Toast } from './hud-logic.js';
 
@@ -168,27 +166,6 @@ describe('ToastQueue', () => {
   });
 });
 
-describe('placement', () => {
-  it('puts the credits line 1.5 m ahead and below the eye line', () => {
-    const out = { x: 0, y: 0, z: 0 };
-    slotPosition({ x: 0, y: 1.6, z: 1 }, 0, SLOTS.credits, out);
-    expect(out.x).toBeCloseTo(0);
-    expect(out.z).toBeCloseTo(-0.5);
-    expect(out.y).toBeLessThan(1.6);
-  });
-
-  it('places the places list to the left of forward, whatever the heading', () => {
-    const out = { x: 0, y: 0, z: 0 };
-    slotPosition({ x: 0, y: 1.6, z: 0 }, 0, SLOTS.places, out);
-    expect(out.x).toBeLessThan(0); // left of -Z is -X
-    const yaw = yawFromForward(-1, 0); // facing -X
-    expect(yaw).toBeCloseTo(Math.PI / 2);
-    slotPosition({ x: 0, y: 1.6, z: 0 }, yaw, SLOTS.credits, out);
-    expect(out.x).toBeCloseTo(-1.5);
-    expect(out.z).toBeCloseTo(0);
-  });
-});
-
 describe('seated reach', () => {
   it('opens every panel within MAX_SLOT_DEG of forward, in every mode', async () => {
     const { SLOTS, STREET_PLACES_SLOT, MAX_SLOT_DEG } = await import('./hud-logic.js');
@@ -282,11 +259,12 @@ describe('places list', () => {
 
   it('shows the list in the room and in street', async () => {
     const { showPlacesPanel } = await import('./hud-logic.js');
-    expect([showPlacesPanel('table', 3), showPlacesPanel('street', 3)]).toEqual([true, true]);
-    expect(showPlacesPanel('table', 0)).toBe(false);
-    expect(showPlacesPanel('table', 0, true)).toBe(true);
-    expect(showPlacesPanel('street', 0, true)).toBe(true);
-    expect(showPlacesPanel('portal', 3)).toBe(false);
+    const c = (placeCount: number, loading = false) => ({ placeCount, loading, resume: null });
+    expect([showPlacesPanel('table', c(3)), showPlacesPanel('street', c(3))]).toEqual([true, true]);
+    expect(showPlacesPanel('table', c(0))).toBe(false);
+    expect(showPlacesPanel('table', c(0, true))).toBe(true);
+    expect(showPlacesPanel('street', c(0, true))).toBe(true);
+    expect(showPlacesPanel('portal', c(3))).toBe(false);
   });
 
   it('shows the settings panel at the table alone', async () => {
@@ -343,7 +321,10 @@ describe('resume row', () => {
     expect(resumeRow({ label: 'Main St', year: 2016 }, 'table')).toEqual({ name: 'Continue: Main St', detail: '2016' });
     expect(resumeRow({ year: null }, 'table')).toEqual({ name: 'Continue last street', detail: 'NOW' });
     expect(resumeRow({ label: 'A very long place name that will not fit', year: null }, 'table')!.name.length).toBeLessThan(40);
-    expect(showPlacesPanel('table', 0, false, true)).toBe(true);
-    expect(showPlacesPanel('street', 0, false, true)).toBe(false);
+    const resume = resumeRow({ year: null }, 'table');
+    expect(showPlacesPanel('table', { placeCount: 0, loading: false, resume })).toBe(true);
+    // Outside the room `resumeRow` is null, so a saved street alone does not show the panel.
+    const inStreet = resumeRow({ year: null }, 'street');
+    expect(showPlacesPanel('street', { placeCount: 0, loading: false, resume: inStreet })).toBe(false);
   });
 });

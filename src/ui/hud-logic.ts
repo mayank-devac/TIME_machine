@@ -4,6 +4,7 @@
  */
 import type { AppState, ArchivePhoto, LatLng, Mode, Pano, SavedSession } from '../contracts.js';
 import { yearOf } from '../contracts.js';
+import type { ViewerOffset } from '../head.js';
 
 // ---------------------------------------------------------------------------------------------
 // Credits
@@ -153,12 +154,20 @@ export interface PlacesPage {
   pageText: string;
 }
 
+/** What the places panel would show, apart from its frame. */
+export interface PlacesContent {
+  placeCount: number;
+  loading: boolean;
+  /** The continue row; `resumeRow` already limits it to the room. */
+  resume: ResumeRow | null;
+}
+
 /**
- * The places list shows in the room and in street; it needs a place to list, a running lookup,
- * or (in the room) a saved street to continue.
+ * The places list shows in the room and in street, when it has something to show: a place,
+ * a running lookup, or a saved street to continue.
  */
-export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false, canResume = false): boolean =>
-  (mode === 'table' || mode === 'street') && (placeCount > 0 || loading || (mode === 'table' && canResume));
+export const showPlacesPanel = (mode: Mode, { placeCount, loading, resume }: PlacesContent): boolean =>
+  (mode === 'table' || mode === 'street') && (placeCount > 0 || loading || resume !== null);
 
 export interface ResumeRow {
   name: string;
@@ -383,15 +392,6 @@ export class ToastQueue {
 
 export type HudSlot = 'bar' | 'places' | 'search' | 'settings' | 'credits' | 'status';
 
-export interface SlotSpec {
-  /** Degrees to the left of the user's forward direction (negative is right). */
-  leftDeg: number;
-  /** Horizontal distance from the head, metres. */
-  distance: number;
-  /** Height relative to the head, metres (negative is below the eye line). */
-  dy: number;
-}
-
 /**
  * Furthest any panel centre opens from straight ahead, degrees. A seated user should see
  * every panel without turning in the chair: a Quest shows about 45-49 degrees per side, and
@@ -405,7 +405,7 @@ export const MAX_SLOT_DEG = 30;
  * within `MAX_SLOT_DEG` of forward. Settings stacks above search on the right (both are
  * table-mode only and start folded). Every panel except the status toast can be dragged.
  */
-export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
+export const SLOTS: Readonly<Record<HudSlot, ViewerOffset>> = {
   status: { leftDeg: 0, distance: 1.5, dy: -0.2 },
   // Year, chips and MAP / TIME MACHINE / PORTAL: below the eye line, above the floor arrows.
   bar: { leftDeg: 0, distance: 1.3, dy: -0.47 },
@@ -419,32 +419,12 @@ export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
 };
 
 /** Street lifts the places panel to the eye line, clear of the street bar. */
-export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 30, distance: 1.5, dy: 0 };
+export const STREET_PLACES_SLOT: ViewerOffset = { leftDeg: 30, distance: 1.5, dy: 0 };
 
 /** Street omits places that are basically the spot the player already stands on. */
 export const STREET_PLACE_MIN_OFFSET_M = 15;
 
 /** Where a HUD slot sits in a given mode. Only `places` moves; street needs the outer spot. */
-export function slotSpec(slot: HudSlot, mode: Mode): SlotSpec {
+export function slotSpec(slot: HudSlot, mode: Mode): ViewerOffset {
   return slot === 'places' && mode === 'street' ? STREET_PLACES_SLOT : SLOTS[slot];
-}
-
-export interface Vec3Like {
-  x: number;
-  y: number;
-  z: number;
-}
-
-/** Yaw (radians, 0 = looking down -Z, positive = turning left) from a forward vector. */
-export function yawFromForward(fx: number, fz: number): number {
-  return Math.atan2(-fx, -fz);
-}
-
-/** World position of a slot for a head at `head` facing `yaw`. Writes into `out`. */
-export function slotPosition(head: Vec3Like, yaw: number, slot: SlotSpec, out: Vec3Like): Vec3Like {
-  const a = yaw + (slot.leftDeg * Math.PI) / 180;
-  out.x = head.x - Math.sin(a) * slot.distance;
-  out.y = head.y + slot.dy;
-  out.z = head.z - Math.cos(a) * slot.distance;
-  return out;
 }

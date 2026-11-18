@@ -11,7 +11,7 @@ export const createTrack: TrackFactory = async (ctx) => {
   const { world } = ctx;
   const timeMachine = new TimeMachine(ctx);
   world.registerSystem(TimeLensSystem);
-  world.getSystem(TimeLensSystem)?.bind(timeMachine, () => ctx.prefs.get().lensHand);
+  world.getSystem(TimeLensSystem)?.bind(timeMachine, ctx.prefs);
 
   let stopDev: () => void = () => {};
   if (import.meta.env.DEV) {
@@ -23,7 +23,7 @@ export const createTrack: TrackFactory = async (ctx) => {
     name: 'time',
     dispose() {
       stopDev();
-      world.getSystem(TimeLensSystem)?.bind(null);
+      world.getSystem(TimeLensSystem)?.unbind();
       world.unregisterSystem(TimeLensSystem);
       timeMachine.dispose();
     },

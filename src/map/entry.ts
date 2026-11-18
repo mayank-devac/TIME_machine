@@ -1,11 +1,6 @@
 import type { MapTable, Track, TrackFactory } from '../contracts.js';
 import { LandingPage } from './landing.js';
-import { Vector3 } from '@iwsdk/core';
-import { readHead } from '../head.js';
 import { onThemeChange } from '../theme.js';
-
-/** Wait this long after a session starts before reading the head pose (it is not valid at once). */
-const PLACE_AFTER_XR_MS = 700;
 import { TableMap, mapCredit } from './table.js';
 
 /**
@@ -61,41 +56,16 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
     else table.hide();
     syncLanding();
   });
+  // A new frame of reference (session start or end, headset recentre, C key) puts the table
+  // in front of the viewer at a height that suits them; outside XR it goes back to its default.
+  const offRecentred = bus.on('viewer:recentred', ({ head, forward, immersive }) => {
+    if (immersive) table.placeForViewer(head, forward);
+    else table.resetPlacement();
+  });
+  // The landing card is a 2D page overlay: only outside XR.
   const xr = world.renderer.xr;
-  const head = new Vector3();
-  const forward = new Vector3();
-  let placeTimer: ReturnType<typeof setTimeout> | null = null;
-  const placeForViewer = (): void => {
-    placeTimer = null;
-    if (!xr.isPresenting) return;
-    readHead(world, head, forward);
-    table.placeForViewer(head, forward);
-  };
-  const onSession = (): void => {
-    // The world origin moves with the session, so a dragged table goes back to its default spot.
-    table.resetPlacement();
-    syncLanding();
-    if (placeTimer) clearTimeout(placeTimer);
-    placeTimer = null;
-  };
-  // The headset's recentre (holding the Meta button) resets the reference space: follow it.
-  let space: XRReferenceSpace | null = null;
-  const onReset = (): void => placeForViewer();
-  const onSessionStart = (): void => {
-    onSession();
-    // Wait for real head poses (`world.session` is not even set yet when this fires), then put
-    // the table in front of the viewer at a height that suits them (seated or standing).
-    placeTimer = setTimeout(placeForViewer, PLACE_AFTER_XR_MS);
-    space = xr.getReferenceSpace();
-    space?.addEventListener('reset', onReset);
-  };
-  const onSessionEnd = (): void => {
-    space?.removeEventListener('reset', onReset);
-    space = null;
-    onSession();
-  };
-  xr.addEventListener('sessionstart', onSessionStart);
-  xr.addEventListener('sessionend', onSessionEnd);
+  xr.addEventListener('sessionstart', syncLanding);
+  xr.addEventListener('sessionend', syncLanding);
   if (state.get().mode === 'table') table.show();
   else table.hide();
   syncLanding();
@@ -158,10 +128,9 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
       offFly();
       offPrefs();
       offTheme();
-      if (placeTimer) clearTimeout(placeTimer);
-      space?.removeEventListener('reset', onReset);
-      xr.removeEventListener('sessionstart', onSessionStart);
-      xr.removeEventListener('sessionend', onSessionEnd);
+      offRecentred();
+      xr.removeEventListener('sessionstart', syncLanding);
+      xr.removeEventListener('sessionend', syncLanding);
       landing.dispose();
       table.dispose();
     },

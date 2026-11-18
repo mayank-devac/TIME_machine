@@ -16,7 +16,7 @@ import {
   startsCollapsed,
   usablePlaces,
 } from './hud-logic.js';
-import type { PlacesPage } from './hud-logic.js';
+import type { PlacesPage, ResumeRow } from './hud-logic.js';
 import type { Host, PanelModule } from './host.js';
 import { paintBox, paintIconButton, paintText } from './panel-style.js';
 
@@ -46,6 +46,20 @@ export function createPlacesPanel(host: Host): PlacesPanel {
   };
   let shape = '';
 
+  /** "Continue where you left off": the saved street, as an accent row at the top of the list. */
+  const paintResume = (resume: ResumeRow | null): void => {
+    const box = host.el('places', 'places-resume');
+    box?.setProperties({ display: resume ? 'flex' : 'none' });
+    if (!resume) return;
+    const name = host.text('places', 'places-resume-name');
+    const year = host.text('places', 'places-resume-year');
+    name?.setProperties({ text: resume.name });
+    year?.setProperties({ text: resume.detail });
+    paintBox(box, 'primary');
+    paintText(name, 'onAccent');
+    paintText(year, 'onAccent');
+  };
+
   const refresh = (): void => {
     // Animate the "LOOKING NEARBY..." dots only while a lookup is running.
     if (loading && dotTimer === null) {
@@ -60,7 +74,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     }
     const mode = state.get().mode;
     const resume = resumeRow(session.last(), mode);
-    const show = showPlacesPanel(mode, places.length, loading, resume !== null);
+    const show = showPlacesPanel(mode, { placeCount: places.length, loading, resume });
     host.setVisible('places', show);
     if (!show) return;
 
@@ -80,18 +94,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     );
     host.el('places', 'places-content')?.setProperties({ display: isFolded ? 'none' : 'flex' });
 
-    // "Continue where you left off": the saved street, at the top of the list in the room.
-    const resumeBox = host.el('places', 'places-resume');
-    resumeBox?.setProperties({ display: resume ? 'flex' : 'none' });
-    if (resume) {
-      const name = host.text('places', 'places-resume-name');
-      const year = host.text('places', 'places-resume-year');
-      name?.setProperties({ text: resume.name });
-      year?.setProperties({ text: resume.detail });
-      paintBox(resumeBox, 'primary');
-      paintText(name, 'onAccent');
-      paintText(year, 'onAccent');
-    }
+    paintResume(resume);
 
     for (let i = 0; i < PLACES_PER_PAGE; i++) {
       const row = view.rows[i];
