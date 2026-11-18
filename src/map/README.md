@@ -14,12 +14,15 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
   No token means no coverage layer and an `error` event.
 - **Input** goes through IWSDK pointer events on a `RayInteractable` surface, so the desktop
   mouse, controller rays (trigger) and hand rays (pinch) share one code path:
-  - one pointer pressed and moved: pan (the map follows the pointer);
+  - one pointer pressed and moved past the tap slop (1.7 cm on the table, measured from the
+    press point, not path length): pan. Inside the slop the map does not move at all;
   - press and release in place (≤ 1 % of the canvas, ≤ 700 ms): pick. The pick snaps to the
     nearest teal line within 48 canvas px, drops the pin, recentres the map and emits `spot:selected`,
     which enters street view at that point (a drag never picks); a miss emits a
     recoverable `error` ("No 360° imagery there. Tap a glowing street.");
-  - two pointers pressed: spread to zoom (double the spread = +1 zoom), midpoint pans;
+  - two pointers pressed: spread to zoom (double the spread = +1 zoom; nothing until the spread
+    changes by ~11 %), midpoint pans. A held pointer silent for 1.5 s is dropped when another
+    goes down, so a lost release can't turn the next click into a pinch zoom;
   - mouse wheel: zoom around the pointer; right thumbstick up/down: zoom.
   - Zoom is clamped to 12–18 (below 12 a 0.9 m table pulls too many tiles for the quota).
 - **Redraw** (`redraw.ts`): `map.redraw()` is called from the surface mesh's

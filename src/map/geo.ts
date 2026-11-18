@@ -160,13 +160,22 @@ export function nearestOnPolylines(px: number, py: number, lines: Pixel[][], max
 /** How far a pointer may wander on the table during a press and still count as a tap, metres. */
 export const TAP_TRAVEL_M = 0.017;
 
+/** Longest press that still counts as a tap, ms. */
+export const TAP_MAX_MS = 700;
+
+/** `TAP_TRAVEL_M` in canvas pixels: a press must wander further than this before it pans. */
+export function tapSlopPx(canvasPx: number, tableSizeM: number): number {
+  return (TAP_TRAVEL_M / tableSizeM) * canvasPx;
+}
+
 /**
- * Tells a click (a pick) from a drag. `travelPx` is the total pointer travel in canvas
- * pixels since the press; `tableSizeM` is the table's edge length, so the threshold is a
- * real distance on the table (generous for a noisy hand ray) whatever the table size.
+ * Tells a click (a pick) from a drag. `travelPx` is how far the pointer got from where it was
+ * pressed (the furthest point, in canvas pixels, not the path length, so ray jitter does not
+ * add up); `tableSizeM` is the table's edge length, so the threshold is a real distance on the
+ * table (generous for a noisy hand ray) whatever the table size.
  */
 export function isTap(travelPx: number, durationMs: number, canvasPx: number, tableSizeM: number): boolean {
-  return travelPx <= (TAP_TRAVEL_M / tableSizeM) * canvasPx && durationMs <= 700;
+  return travelPx <= tapSlopPx(canvasPx, tableSizeM) && durationMs <= TAP_MAX_MS;
 }
 
 // ---------------------------------------------------------------------------------------------

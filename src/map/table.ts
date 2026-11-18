@@ -38,6 +38,7 @@ import { HoverFx, MapTableTag } from '../track-components.js';
 import {
   clampZoom,
   isTap,
+  tapSlopPx,
   latLngToPixel,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -151,9 +152,26 @@ interface SpotsData {
 interface ActivePointer {
   x: number;
   y: number;
+  /** Where it was pressed, canvas px. */
+  sx: number;
+  sy: number;
+  /** Furthest it has got from (sx, sy), canvas px. */
   travel: number;
   t0: number;
+  /** Last down or move event, ms. */
+  last: number;
+  /** Past the tap slop: this press is a drag and pans the map. */
+  dragging: boolean;
 }
+
+/**
+ * A held pointer with no event for this long is treated as lost when another one goes down.
+ * IWSDK hands switch between ray and poke pointers and the old one can miss its release; left
+ * in place it would turn the next click into a two-pointer pinch (zoom) instead of a pick.
+ */
+const STALE_POINTER_MS = 1500;
+/** A two-pointer gesture zooms only once the spread has changed by this much, log2 units. */
+const PINCH_DEADZONE = 0.15;
 
 export class TableMap implements MapTable {
   /** The grabbable rig; its `root` is the table's root object. */
@@ -191,7 +209,7 @@ export class TableMap implements MapTable {
   private readonly scheduler = new RedrawScheduler();
   private readonly offs: Array<() => void> = [];
   private readonly pointers = new Map<number, ActivePointer>();
-  private gesture = { active: false, startZoom: 0, startDist: 0, midX: 0, midY: 0 };
+  private gesture = { active: false, zooming: false, startZoom: 0, startDist: 0, midX: 0, midY: 0 };
   private multiTouched = false;
   private selfRendered = false;
   private inRedraw = false;
@@ -881,7 +899,27 @@ export class TableMap implements MapTable {
       this.log('pointerdown', { id: e.pointerId, button: e.button, type: e.pointerType });
       if (!this.visible || (e.button !== undefined && e.button !== 0)) return;
       const p = this.hitToPixel(e.point);
-      this.pointers.set(e.pointerId, { x: p.x, y: p.y, travel: 0, t0: performance.now() });
+      const now = performance.now();
+      // Drop pointers that lost their release (see STALE_POINTER_MS) before counting this one.
+      for (const [id, old] of this.pointers) {
+        if (id !== e.pointerId && now - old.last > STALE_POINTER_MS) {
+          this.pointers.delete(id);
+          this.release(mesh, id);
+          this.log('pointer-stale', { id });
+        }
+      }
+      if (this.pointers.size < 2) this.gesture.active = false;
+      if (this.pointers.size === 0) this.multiTouched = false;
+      this.pointers.set(e.pointerId, {
+        x: p.x,
+        y: p.y,
+        sx: p.x,
+        sy: p.y,
+        travel: 0,
+        t0: now,
+        last: now,
+        dragging: false,
+      });
       try {
         mesh.setPointerCapture(e.pointerId);
       } catch {
@@ -899,12 +937,21 @@ export class TableMap implements MapTable {
       this.hoverPixel = this.hoverScratch;
       const ptr = this.pointers.get(e.pointerId);
       if (!ptr) return;
-      const dx = p.x - ptr.x;
-      const dy = p.y - ptr.y;
+      ptr.last = performance.now();
+      let dx = p.x - ptr.x;
+      let dy = p.y - ptr.y;
       if (dx === 0 && dy === 0) return;
-      ptr.travel += Math.hypot(dx, dy);
+      ptr.travel = Math.max(ptr.travel, Math.hypot(p.x - ptr.sx, p.y - ptr.sy));
       ptr.x = p.x;
       ptr.y = p.y;
+      if (!ptr.dragging) {
+        // Inside the tap slop the map holds still, so a click never nudges it. Once past it,
+        // the map catches up with the whole offset from the press and follows from then on.
+        if (ptr.travel <= tapSlopPx(this.px, this.size)) return;
+        ptr.dragging = true;
+        dx = p.x - ptr.sx;
+        dy = p.y - ptr.sy;
+      }
       if (this.pointers.size === 1) {
         this.panBy(p, dx, dy);
       } else if (this.gesture.active) {
@@ -924,7 +971,7 @@ export class TableMap implements MapTable {
       const single = !this.multiTouched;
       if (this.pointers.size < 2) this.gesture.active = false;
       if (this.pointers.size === 0) this.multiTouched = false;
-      if (!cancelled && single && isTap(ptr.travel, performance.now() - ptr.t0, this.px, this.size)) {
+      if (!cancelled && single && !ptr.dragging && isTap(ptr.travel, performance.now() - ptr.t0, this.px, this.size)) {
         this.pickAtPixel(ptr.x, ptr.y);
       } else {
         this.log('drag-end', { travelPx: Math.round(ptr.travel), view: this.view });
@@ -1017,6 +1064,7 @@ export class TableMap implements MapTable {
     const [a, b] = pair;
     const g = this.gesture;
     g.active = true;
+    g.zooming = false;
     g.startZoom = this.zoomTarget; // continue from where an ease in progress is heading
     g.startDist = Math.hypot(a.x - b.x, a.y - b.y);
     g.midX = (a.x + b.x) / 2;
@@ -1030,7 +1078,16 @@ export class TableMap implements MapTable {
     const g = this.gesture;
     const midX = (a.x + b.x) / 2;
     const midY = (a.y + b.y) / 2;
-    this.zoomTo(pinchZoom(g.startZoom, g.startDist, Math.hypot(a.x - b.x, a.y - b.y)), midX, midY);
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (!g.zooming && g.startDist > 1e-6 && dist > 1e-6) {
+      // Two hands moving together pan; zoom only once the spread clearly changes, and from there
+      // on without a jump (the dead zone is not added to the zoom).
+      if (Math.abs(Math.log2(dist / g.startDist)) > PINCH_DEADZONE) {
+        g.zooming = true;
+        g.startDist = dist;
+      }
+    }
+    if (g.zooming) this.zoomTo(pinchZoom(g.startZoom, g.startDist, dist), midX, midY);
     this.tmpPixel.x = midX;
     this.tmpPixel.y = midY;
     this.panBy(this.tmpPixel, midX - g.midX, midY - g.midY);
