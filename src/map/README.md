@@ -12,17 +12,23 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
 - **Coverage layer**: Mapillary vector tiles, `sequence` layer, filtered to
   `is_pano == true`, drawn teal under the labels. Curated spots are violet dots with labels.
   No token means no coverage layer and an `error` event.
+- **Map style** (`style.ts`): base raster map, coverage, buildings, spot and pick layers.
 - **Input** goes through IWSDK pointer events on a `RayInteractable` surface, so the desktop
-  mouse, controller rays (trigger) and hand rays (pinch) share one code path:
-  - one pointer pressed and moved past the tap slop (1.7 cm on the table, measured from the
-    press point, not path length): pan. Inside the slop the map does not move at all;
-  - press and release in place (≤ 1 % of the canvas, ≤ 700 ms): pick. The pick snaps to the
-    nearest teal line within 48 canvas px, drops the pin, recentres the map and emits `spot:selected`,
-    which enters street view at that point (a drag never picks); a miss emits a
+  mouse, controller rays (trigger) and hand rays (pinch) share one code path. Presses are
+  classified by `TableGestures` (`gestures.ts`, pure, tested in `gestures.test.ts`); the
+  thresholds are the constants there (`TAP_TRAVEL_M`, `TAP_MAX_MS`, `PINCH_DEADZONE`,
+  `STALE_POINTER_MS`):
+  - one pointer moved past the tap slop (measured from the press point, not path length):
+    pan. Inside the slop the map does not move at all;
+  - released inside the slop and quickly enough: pick. The pick snaps to the nearest teal
+    line within 48 canvas px, drops the pin and emits `spot:selected`, which enters street view
+    there. The table does not move while the street loads; the map entry recentres it on
+    every `pano:shown`, so it shows where the player is on return; a miss emits a
     recoverable `error` ("No 360° imagery there. Tap a glowing street.");
-  - two pointers pressed: spread to zoom (double the spread = +1 zoom; nothing until the spread
-    changes by ~11 %), midpoint pans. A held pointer silent for 1.5 s is dropped when another
-    goes down, so a lost release can't turn the next click into a pinch zoom;
+  - two pointers pressed: pinch. The midpoint pans; zoom follows the spread (double = +1)
+    once it has changed past the dead zone. A sequence that had two pointers never picks.
+    A held pointer silent for `STALE_POINTER_MS` is dropped when another goes down (a
+    workaround, see `docs/untested-on-device.md`);
   - mouse wheel: zoom around the pointer; right thumbstick up/down: zoom.
   - Zoom is clamped to 12–18 (below 12 a 0.9 m table pulls too many tiles for the quota).
 - **Redraw** (`redraw.ts`): `map.redraw()` is called from the surface mesh's
@@ -35,7 +41,7 @@ Entry: `createTrack` in `entry.ts`. It returns a `Track` that also implements `M
   curated list from `PanoSource.spots()`. Clicking a name shows the place on the table;
   "Street view" emits `spot:selected`. The card is hidden while an XR session runs or the
   mode is not `table`. It carries the full credit line (OSM, OpenFreeMap, Mapillary).
-- Pure maths (projection, pan, zoom-around, pinch, snap, tap test) is in `geo.ts`.
+- Pure maths (projection, pan, zoom-around, pinch, snap) is in `geo.ts`.
 
 ## Is redrawing during an XR session proven?
 

@@ -1,7 +1,8 @@
 import type { MapTable, Track, TrackFactory } from '../contracts.js';
 import { LandingPage } from './landing.js';
 import { onThemeChange } from '../theme.js';
-import { TableMap, mapCredit } from './table.js';
+import { mapCredit } from './style.js';
+import { TableMap } from './table.js';
 
 /**
  * Dev evidence switches. Both must be false when committed for integration.
@@ -30,10 +31,7 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
   const landing = new LandingPage(
     {
       onPreview: (p) => table.flyTo(p.lat, p.lng, 17),
-      onEnter: (p) => {
-        table.flyTo(p.lat, p.lng, 17);
-        bus.emit('spot:selected', { lat: p.lat, lng: p.lng, label: p.label });
-      },
+      onEnter: (p) => bus.emit('spot:selected', { lat: p.lat, lng: p.lng, label: p.label }),
     },
     spots,
   );
@@ -42,6 +40,10 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
   syncCredit();
 
   const offFly = bus.on('map:flyRequested', ({ lat, lng, zoom }) => table.flyTo(lat, lng, zoom ?? 17));
+  // The table follows the panorama on screen, so it shows where the player is when they come
+  // back. Not on spot:selected: the table is still in view while the street loads, and a jump
+  // there reads as the map zooming out instead of the tap entering the street.
+  const offPanoShown = bus.on('pano:shown', ({ pano }) => table.flyTo(pano.lat, pano.lng));
   // Settings live on the HUD's settings panel; the table and the card just follow them.
   const offPrefs = bus.on('prefs:changed', (p) => {
     table.applyPrefs(p);
@@ -126,6 +128,7 @@ export const createTrack: TrackFactory = (ctx): MapTrack => {
       offTrace.forEach((off) => off());
       offMode();
       offFly();
+      offPanoShown();
       offPrefs();
       offTheme();
       offRecentred();

@@ -3,6 +3,22 @@
 Nobody has run this on a Meta Quest. Everything below is unknown until someone does.
 Add to this list; do not remove items without a device test.
 
+## Map tap versus drag, 2026-11-18 (flat browser only)
+
+A tap on a coverage line now enters street view; a press must move 17 mm on the table before
+it pans; a pinch zooms only past a dead zone (`src/map/gestures.ts`, unit-tested). Checked in
+the flat browser with the mouse: a 2 px wobble picked without moving the map, a drag panned
+without changing the zoom. Unknowns:
+
+- A report of "clicking zooms out" in the emulator was not reproduced. The suspected cause:
+  IWSDK's `MultiPointer` runs the button lifecycle only for a hand's active pointer, so a press
+  whose hand switches between ray, poke and grab may never release, and the next click becomes
+  a two-pointer pinch. `STALE_POINTER_MS` (1.5 s) drops such a pointer when another goes down.
+  It is a workaround: whether releases are really lost, and whether 1.5 s ever drops a real,
+  perfectly still second pointer, needs a headset (watch for `pointer-dropped` with
+  `DEV_TRACE` on in `src/map/entry.ts`).
+- Whether 17 mm of slop is enough for real hand-ray jitter, and not too much for controllers.
+
 ## Hands-only and seated pass, 2026-11-18 (Meta Quest 3 profile, IWER, hand input mode)
 
 Verified in the emulator only, with emulated hands and no controller: a hand-ray pinch

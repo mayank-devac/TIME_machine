@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampZoom,
-  isTap,
   latLngToPixel,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -131,17 +130,6 @@ describe('pick snapping', () => {
     ];
     expect(nearestOnPolylines(50, 125, [line, other])!.y).toBeCloseTo(130, 9);
     expect(nearestOnPolylines(12, 10, [[{ x: 10, y: 10 }]])!.distance).toBeCloseTo(2, 9);
-  });
-});
-
-describe('tap versus drag', () => {
-  it('a short, still press is a tap', () => {
-    expect(isTap(5, 200, PX, 1.7)).toBe(true);
-    expect(isTap(80, 200, PX, 1.7)).toBe(false);
-    expect(isTap(5, 1500, PX, 1.7)).toBe(false);
-    // The threshold is a distance on the table (17 mm), not a share of the canvas.
-    expect(isTap(PX * 0.0099, 200, PX, 1.7)).toBe(true);
-    expect(isTap(PX * 0.0099, 200, PX, 3.4)).toBe(false);
   });
 });
 

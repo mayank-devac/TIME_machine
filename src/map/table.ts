@@ -25,25 +25,23 @@ import {
 } from '@iwsdk/core';
 import type { Entity, World } from '@iwsdk/core';
 import maplibregl from 'maplibre-gl';
-import type { GeoJSONSource, LayerSpecification, StyleSpecification } from 'maplibre-gl';
+import type { GeoJSONSource, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { config } from '../config.js';
 import type { CuratedSpot, EventBus, LatLng, MapTable, Prefs, SpotInfo, Vec3Like } from '../contracts.js';
 import { DragRig, placements, stopBubbling } from '../drag.js';
+import { TableGestures, tapSlopPx } from './gestures.js';
 import { setHoverTint } from '../hover.js';
 import { baseMapFor } from '../prefs.js';
 import type { BaseMapKind } from '../prefs.js';
-import { currentTokens, hexAlpha, hexNumber, mix, opaque } from '../theme.js';
+import { currentTokens, hexAlpha, hexNumber } from '../theme.js';
 import { HoverFx, MapTableTag } from '../track-components.js';
 import {
   clampZoom,
-  isTap,
-  tapSlopPx,
   latLngToPixel,
   MAX_ZOOM,
   MIN_ZOOM,
   nearestOnPolylines,
-  pinchZoom,
   planeLocalToPixel,
   railToZoom,
   stepZoom,
@@ -58,58 +56,19 @@ import {
 import { DEFAULT_TABLE_POSE, tablePoseFor } from './placement.js';
 import type { TablePose } from './placement.js';
 import { RedrawScheduler } from './redraw.js';
-
-export const MAPILLARY_TILES = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}';
-export type { BaseMapKind };
-
-/** Rim credit line; names the imagery provider only when satellite imagery is showing. */
-export function mapCredit(kind: BaseMapKind, buildings3d = false): string {
-  const base =
-    kind === 'satellite'
-      ? 'Imagery © Esri, Maxar, Earthstar Geographics'
-      : 'Map © Esri, HERE, Garmin, OpenStreetMap contributors';
-  const bld = buildings3d ? '  ·  Buildings © OpenStreetMap contributors, OpenFreeMap' : '';
-  return `${base}${bld}  ·  Coverage © Mapillary`;
-}
+import {
+  BUILDINGS_LAYER,
+  buildMapStyle,
+  COVERAGE_LAYER,
+  mapCredit,
+  PICK_SOURCE,
+  SPOTS_SOURCE,
+  type SpotsData,
+} from './style.js';
 
 /** Camera tilt used by the 3D buildings view, degrees. Kept under ~70 so no horizon or sky shows on the table. */
 export const PITCH_3D = 55;
-const BUILDINGS_LAYER = 'tm-buildings';
 
-/**
- * Base maps are plain raster tile layers. MapLibre only composes them with the Mapillary
- * coverage; no vector basemap is used because OpenFreeMap's ~400 KB vector tiles stalled in the
- * managed browser, leaving the table with no roads or water. Rasters are small and always load.
- */
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
-const esriTiles = (service: string): string[] => [`${ESRI}/${service}/MapServer/tile/{z}/{y}/{x}`];
-
-export function buildBaseStyle(kind: BaseMapKind): StyleSpecification {
-  const sources: StyleSpecification['sources'] = {};
-  const layers: LayerSpecification[] = [
-    { id: 'background', type: 'background', paint: { 'background-color': opaque(currentTokens().background) } },
-  ];
-  const raster = (id: string, service: string, maxzoom: number, attribution?: string): void => {
-    sources[id] = { type: 'raster', tiles: esriTiles(service), tileSize: 256, maxzoom, attribution };
-    layers.push({ id, type: 'raster', source: id });
-  };
-  if (kind === 'satellite') {
-    raster('base', 'World_Imagery', 19, 'Imagery © Esri, Maxar, Earthstar Geographics');
-    raster('base-labels', 'Reference/World_Boundaries_and_Places', 19);
-  } else if (kind === 'dark') {
-    raster('base', 'Canvas/World_Dark_Gray_Base', 16, 'Map © Esri, HERE, Garmin, OpenStreetMap contributors');
-    raster('base-labels', 'Canvas/World_Dark_Gray_Reference', 16);
-  } else {
-    raster('base', 'World_Street_Map', 19, 'Map © Esri, HERE, Garmin, OpenStreetMap contributors');
-  }
-  return {
-    version: 8,
-    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
-    sources,
-    layers,
-  };
-}
-const COVERAGE_LAYER = 'mly-pano-sequences';
 /** How far from a coverage line a tap still snaps to it, canvas pixels (about 2 cm on the table). */
 const SNAP_PX = 48;
 /** Stop pending-tile redraws when MapLibre has reported no new data for this long, ms. */
@@ -139,39 +98,6 @@ export interface TableStats {
   /** Per-source load state, e.g. "openmaptiles:ok,mapillary:loading". */
   sources: string;
 }
-
-interface SpotsData {
-  type: 'FeatureCollection';
-  features: Array<{
-    type: 'Feature';
-    properties: { name: string };
-    geometry: { type: 'Point'; coordinates: number[] };
-  }>;
-}
-
-interface ActivePointer {
-  x: number;
-  y: number;
-  /** Where it was pressed, canvas px. */
-  sx: number;
-  sy: number;
-  /** Furthest it has got from (sx, sy), canvas px. */
-  travel: number;
-  t0: number;
-  /** Last down or move event, ms. */
-  last: number;
-  /** Past the tap slop: this press is a drag and pans the map. */
-  dragging: boolean;
-}
-
-/**
- * A held pointer with no event for this long is treated as lost when another one goes down.
- * IWSDK hands switch between ray and poke pointers and the old one can miss its release; left
- * in place it would turn the next click into a two-pointer pinch (zoom) instead of a pick.
- */
-const STALE_POINTER_MS = 1500;
-/** A two-pointer gesture zooms only once the spread has changed by this much, log2 units. */
-const PINCH_DEADZONE = 0.15;
 
 export class TableMap implements MapTable {
   /** The grabbable rig; its `root` is the table's root object. */
@@ -208,9 +134,7 @@ export class TableMap implements MapTable {
   private lastPick: { lat: number; lng: number } | null = null;
   private readonly scheduler = new RedrawScheduler();
   private readonly offs: Array<() => void> = [];
-  private readonly pointers = new Map<number, ActivePointer>();
-  private gesture = { active: false, zooming: false, startZoom: 0, startDist: 0, midX: 0, midY: 0 };
-  private multiTouched = false;
+  private readonly gestures: TableGestures;
   private selfRendered = false;
   private inRedraw = false;
   private uploads = 0;
@@ -234,6 +158,19 @@ export class TableMap implements MapTable {
   ) {
     this.view = { lat: start.lat, lng: start.lng, zoom: config.map.defaultZoom };
     this.zoomTarget = this.view.zoom;
+    this.gestures = new TableGestures(
+      {
+        pan: (end, dx, dy) => this.panBy(end, dx, dy),
+        zoomTo: (z, ax, ay) => this.zoomTo(z, ax, ay),
+        tap: (x, y) => this.pickAtPixel(x, y),
+        dropped: (id) => {
+          this.release(this.mapMesh, id);
+          this.log('pointer-dropped', { id });
+        },
+        zoomTarget: () => this.zoomTarget,
+      },
+      tapSlopPx(this.px, this.size),
+    );
     this.baseKind = baseMapFor(prefs);
     this.themeName = prefs.theme;
     this.buildings3d = prefs.buildings3d;
@@ -364,12 +301,9 @@ export class TableMap implements MapTable {
     this.visible = false;
     this.root.visible = false;
     // Let go of any pointer held on the map or the rail, or its capture would outlive the table.
-    for (const id of this.pointers.keys()) this.release(this.mapMesh, id);
-    this.pointers.clear();
+    this.gestures.reset();
     if (this.railPointer !== null) this.release(this.railMesh, this.railPointer);
     this.railPointer = null;
-    this.gesture.active = false;
-    this.multiTouched = false;
     this.hoverPixel = null;
     this.zoomTarget = this.view.zoom; // drop an ease in progress
   }
@@ -410,7 +344,7 @@ export class TableMap implements MapTable {
   // --- curated spots and pick marker -----------------------------------------------------------
 
   setSpots(spots: CuratedSpot[]): void {
-    const src = this.map?.getSource('tm-spots') as GeoJSONSource | undefined;
+    const src = this.map?.getSource(SPOTS_SOURCE) as GeoJSONSource | undefined;
     const data = {
       type: 'FeatureCollection' as const,
       features: spots.map((s) => ({
@@ -427,7 +361,7 @@ export class TableMap implements MapTable {
 
   private markPick(lat: number, lng: number): void {
     this.lastPick = { lat, lng };
-    const src = this.map?.getSource('tm-pick') as GeoJSONSource | undefined;
+    const src = this.map?.getSource(PICK_SOURCE) as GeoJSONSource | undefined;
     src?.setData({ type: 'Point', coordinates: [lng, lat] });
     this.scheduler.markDirty();
   }
@@ -520,8 +454,8 @@ export class TableMap implements MapTable {
     const spot: SpotInfo = { lat: ll.lat, lng: ll.lng };
     this.markPick(spot.lat, spot.lng);
     this.log('pick', { px, py, snappedPx: [Math.round(x), Math.round(y)], spot });
-    // A clean tap on a coverage line goes straight into street view at the snapped point.
-    this.flyTo(spot.lat, spot.lng);
+    // A clean tap on a coverage line goes straight into street view at the snapped point. The
+    // table stays put while it loads (the map entry recentres it on pano:shown).
     this.bus.emit('spot:selected', spot);
     return spot;
   }
@@ -608,8 +542,8 @@ export class TableMap implements MapTable {
 
   private async createMap(): Promise<void> {
     if (this.disposed) return;
-    const style = buildBaseStyle(this.baseKind);
-    this.addOverlays(style);
+    if (!this.token) this.fail('No Mapillary token, so the map cannot show where street imagery exists.');
+    const style = this.mapStyle();
 
     const map = new maplibregl.Map({
       container: this.holder,
@@ -660,102 +594,8 @@ export class TableMap implements MapTable {
     this.log('map-created', { canvas: `${map.getCanvas().width}x${map.getCanvas().height}` });
   }
 
-  /** Put the coverage layer below the first label layer, and add spot and pick markers. */
-  private addOverlays(style: StyleSpecification): void {
-    const t = currentTokens();
-    // Over satellite imagery the buildings take the dark surface; on a drawn map, a tone
-    // between the panel surface and its border so they read as raised blocks.
-    const buildingColour = mix(t.surface, t.border, 0.5);
-    style.sources = { ...style.sources };
-    const layers: LayerSpecification[] = [...style.layers];
-    const firstSymbol = layers.findIndex((l) => l.type === 'symbol');
-    const insertAt = firstSymbol < 0 ? layers.length : firstSymbol;
-    if (this.token) {
-      style.sources.mapillary = {
-        type: 'vector',
-        tiles: [`${MAPILLARY_TILES}?access_token=${this.token}`],
-        minzoom: 6,
-        maxzoom: 14,
-        attribution: '© Mapillary',
-      };
-      layers.splice(insertAt, 0, {
-        id: COVERAGE_LAYER,
-        type: 'line',
-        source: 'mapillary',
-        'source-layer': 'sequence',
-        filter: ['==', ['get', 'is_pano'], true],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': t.success,
-          'line-opacity': 0.9,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 15, 5, 18, 9],
-        },
-      });
-    } else {
-      this.fail('No Mapillary token, so the map cannot show where street imagery exists.');
-    }
-    // 3D buildings: OpenFreeMap vector tiles (OpenStreetMap data), extruded. The source is only
-    // requested while the layer is visible, so flat mode costs nothing extra.
-    style.sources['tm-buildings'] = {
-      type: 'vector',
-      url: 'https://tiles.openfreemap.org/planet',
-      attribution: '© OpenStreetMap contributors, OpenFreeMap',
-    };
-    layers.splice(insertAt, 0, {
-      id: BUILDINGS_LAYER,
-      type: 'fill-extrusion',
-      source: 'tm-buildings',
-      'source-layer': 'building',
-      minzoom: 14,
-      layout: { visibility: this.buildings3d ? 'visible' : 'none' },
-      paint: {
-        'fill-extrusion-color': buildingColour,
-        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
-        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-        'fill-extrusion-opacity': 0.88,
-        'fill-extrusion-vertical-gradient': true,
-      },
-    });
-    style.sources['tm-spots'] = { type: 'geojson', data: this.pendingSpots };
-    style.sources['tm-pick'] = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } };
-    layers.push(
-      {
-        id: 'tm-spots',
-        type: 'circle',
-        source: 'tm-spots',
-        paint: {
-          'circle-radius': 14,
-          'circle-color': t.accent,
-          'circle-stroke-color': t.onAccent,
-          'circle-stroke-width': 4,
-        },
-      },
-      {
-        id: 'tm-spots-label',
-        type: 'symbol',
-        source: 'tm-spots',
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-font': ['Noto Sans Bold'],
-          'text-size': 30,
-          'text-offset': [0, 1.2],
-          'text-anchor': 'top',
-        },
-        paint: { 'text-color': t.textPrimary, 'text-halo-color': opaque(t.background), 'text-halo-width': 3 },
-      },
-      {
-        id: 'tm-pick',
-        type: 'circle',
-        source: 'tm-pick',
-        paint: {
-          'circle-radius': 18,
-          'circle-opacity': 0,
-          'circle-stroke-color': t.accent,
-          'circle-stroke-width': 6,
-        },
-      },
-    );
-    style.layers = layers;
+  private mapStyle(): StyleSpecification {
+    return buildMapStyle(this.baseKind, { token: this.token, buildings3d: this.buildings3d, spots: this.pendingSpots });
   }
 
   /**
@@ -765,8 +605,7 @@ export class TableMap implements MapTable {
   private restyleMap(): void {
     const map = this.map;
     if (!map) return;
-    const style = buildBaseStyle(this.baseKind);
-    this.addOverlays(style);
+    const style = this.mapStyle();
     map.once('style.load', () => {
       if (this.lastPick) this.markPick(this.lastPick.lat, this.lastPick.lng);
       this.scheduler.markDirty();
@@ -892,96 +731,34 @@ export class TableMap implements MapTable {
     return planeLocalToPixel(local.x, local.y, this.size, this.px, this.tmpPixel);
   }
 
+  /** Map presses go through `TableGestures`; this only converts hits to canvas pixels. */
   private bindPointers(): void {
     const mesh = this.mapMesh;
-
-    const down = (e: { pointerId: number; point: Vector3; button?: number; pointerType?: string }): void => {
+    const now = (): number => performance.now();
+    const onDown = (e: { pointerId: number; point: Vector3; button?: number; pointerType?: string }): void => {
       this.log('pointerdown', { id: e.pointerId, button: e.button, type: e.pointerType });
       if (!this.visible || (e.button !== undefined && e.button !== 0)) return;
-      const p = this.hitToPixel(e.point);
-      const now = performance.now();
-      // Drop pointers that lost their release (see STALE_POINTER_MS) before counting this one.
-      for (const [id, old] of this.pointers) {
-        if (id !== e.pointerId && now - old.last > STALE_POINTER_MS) {
-          this.pointers.delete(id);
-          this.release(mesh, id);
-          this.log('pointer-stale', { id });
-        }
-      }
-      if (this.pointers.size < 2) this.gesture.active = false;
-      if (this.pointers.size === 0) this.multiTouched = false;
-      this.pointers.set(e.pointerId, {
-        x: p.x,
-        y: p.y,
-        sx: p.x,
-        sy: p.y,
-        travel: 0,
-        t0: now,
-        last: now,
-        dragging: false,
-      });
+      this.gestures.down(e.pointerId, this.hitToPixel(e.point), now());
       try {
         mesh.setPointerCapture(e.pointerId);
       } catch {
         /* capture is best-effort */
       }
-      if (this.pointers.size === 2) this.startGesture();
-      if (this.pointers.size > 1) this.multiTouched = true;
     };
-
-    const move = (e: { pointerId: number; point: Vector3 }): void => {
+    const onMove = (e: { pointerId: number; point: Vector3 }): void => {
       const p = this.hitToPixel(e.point);
       // Remember where a ray rests on the map, pressed or not: the thumbstick zooms around it.
       this.hoverScratch.x = p.x;
       this.hoverScratch.y = p.y;
       this.hoverPixel = this.hoverScratch;
-      const ptr = this.pointers.get(e.pointerId);
-      if (!ptr) return;
-      ptr.last = performance.now();
-      let dx = p.x - ptr.x;
-      let dy = p.y - ptr.y;
-      if (dx === 0 && dy === 0) return;
-      ptr.travel = Math.max(ptr.travel, Math.hypot(p.x - ptr.sx, p.y - ptr.sy));
-      ptr.x = p.x;
-      ptr.y = p.y;
-      if (!ptr.dragging) {
-        // Inside the tap slop the map holds still, so a click never nudges it. Once past it,
-        // the map catches up with the whole offset from the press and follows from then on.
-        if (ptr.travel <= tapSlopPx(this.px, this.size)) return;
-        ptr.dragging = true;
-        dx = p.x - ptr.sx;
-        dy = p.y - ptr.sy;
-      }
-      if (this.pointers.size === 1) {
-        this.panBy(p, dx, dy);
-      } else if (this.gesture.active) {
-        this.updateGesture();
-      }
+      this.gestures.move(e.pointerId, p, now());
     };
-
-    const up = (e: { pointerId: number; point?: Vector3 }, cancelled: boolean): void => {
-      const ptr = this.pointers.get(e.pointerId);
-      if (!ptr) return;
-      this.pointers.delete(e.pointerId);
-      try {
-        mesh.releasePointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
-      const single = !this.multiTouched;
-      if (this.pointers.size < 2) this.gesture.active = false;
-      if (this.pointers.size === 0) this.multiTouched = false;
-      if (!cancelled && single && !ptr.dragging && isTap(ptr.travel, performance.now() - ptr.t0, this.px, this.size)) {
-        this.pickAtPixel(ptr.x, ptr.y);
-      } else {
-        this.log('drag-end', { travelPx: Math.round(ptr.travel), view: this.view });
-      }
+    const up = (e: { pointerId: number }, cancelled: boolean): void => {
+      this.release(mesh, e.pointerId);
+      this.gestures.up(e.pointerId, now(), cancelled);
     };
-
-    const onDown = (e: Parameters<typeof down>[0]) => down(e);
-    const onMove = (e: Parameters<typeof move>[0]) => move(e);
-    const onUp = (e: Parameters<typeof up>[0]) => up(e, false);
-    const onCancel = (e: Parameters<typeof up>[0]) => up(e, true);
+    const onUp = (e: { pointerId: number }) => up(e, false);
+    const onCancel = (e: { pointerId: number }) => up(e, true);
     const onWheel = (e: { point: Vector3; deltaY: number }) => {
       if (!this.visible) return;
       const p = this.hitToPixel(e.point);
@@ -1046,53 +823,6 @@ export class TableMap implements MapTable {
       rail.removeEventListener('pointerup', onUp);
       rail.removeEventListener('pointercancel', onUp);
     });
-  }
-
-  private pointerPair(): [ActivePointer, ActivePointer] | null {
-    let a: ActivePointer | null = null;
-    let b: ActivePointer | null = null;
-    for (const p of this.pointers.values()) {
-      if (!a) a = p;
-      else if (!b) b = p;
-    }
-    return a && b ? [a, b] : null;
-  }
-
-  private startGesture(): void {
-    const pair = this.pointerPair();
-    if (!pair) return;
-    const [a, b] = pair;
-    const g = this.gesture;
-    g.active = true;
-    g.zooming = false;
-    g.startZoom = this.zoomTarget; // continue from where an ease in progress is heading
-    g.startDist = Math.hypot(a.x - b.x, a.y - b.y);
-    g.midX = (a.x + b.x) / 2;
-    g.midY = (a.y + b.y) / 2;
-  }
-
-  private updateGesture(): void {
-    const pair = this.pointerPair();
-    if (!pair) return;
-    const [a, b] = pair;
-    const g = this.gesture;
-    const midX = (a.x + b.x) / 2;
-    const midY = (a.y + b.y) / 2;
-    const dist = Math.hypot(a.x - b.x, a.y - b.y);
-    if (!g.zooming && g.startDist > 1e-6 && dist > 1e-6) {
-      // Two hands moving together pan; zoom only once the spread clearly changes, and from there
-      // on without a jump (the dead zone is not added to the zoom).
-      if (Math.abs(Math.log2(dist / g.startDist)) > PINCH_DEADZONE) {
-        g.zooming = true;
-        g.startDist = dist;
-      }
-    }
-    if (g.zooming) this.zoomTo(pinchZoom(g.startZoom, g.startDist, dist), midX, midY);
-    this.tmpPixel.x = midX;
-    this.tmpPixel.y = midY;
-    this.panBy(this.tmpPixel, midX - g.midX, midY - g.midY);
-    g.midX = midX;
-    g.midY = midY;
   }
 
   /**
