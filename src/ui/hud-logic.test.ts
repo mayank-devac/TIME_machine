@@ -189,6 +189,15 @@ describe('placement', () => {
   });
 });
 
+describe('seated reach', () => {
+  it('opens every panel within MAX_SLOT_DEG of forward, in every mode', async () => {
+    const { SLOTS, STREET_PLACES_SLOT, MAX_SLOT_DEG } = await import('./hud-logic.js');
+    for (const spec of [...Object.values(SLOTS), STREET_PLACES_SLOT]) {
+      expect(Math.abs(spec.leftDeg)).toBeLessThanOrEqual(MAX_SLOT_DEG);
+    }
+  });
+});
+
 describe('stale lens state', () => {
   it('shows the present and the plain label when the lens is on but nothing earlier exists', () => {
     const v = deriveHud({
@@ -323,5 +332,18 @@ describe('places list', () => {
     expect(usablePlaces([here, near, far], { centre: here })).toEqual([here, near, far]);
     expect(usablePlaces([here, near, far], { centre: null, minOffsetM: 15 })).toEqual([here, near, far]);
     expect(usablePlaces([near], { centre: { lat: NaN, lng: NaN }, minOffsetM: 15 })).toEqual([]);
+  });
+});
+
+describe('resume row', () => {
+  it('shows only in the room, with a saved street', async () => {
+    const { resumeRow, showPlacesPanel } = await import('./hud-logic.js');
+    expect(resumeRow(null, 'table')).toBeNull();
+    expect(resumeRow({ label: 'Main St', year: 2016 }, 'street')).toBeNull();
+    expect(resumeRow({ label: 'Main St', year: 2016 }, 'table')).toEqual({ name: 'Continue: Main St', detail: '2016' });
+    expect(resumeRow({ year: null }, 'table')).toEqual({ name: 'Continue last street', detail: 'NOW' });
+    expect(resumeRow({ label: 'A very long place name that will not fit', year: null }, 'table')!.name.length).toBeLessThan(40);
+    expect(showPlacesPanel('table', 0, false, true)).toBe(true);
+    expect(showPlacesPanel('street', 0, false, true)).toBe(false);
   });
 });

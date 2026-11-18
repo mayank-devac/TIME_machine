@@ -15,6 +15,7 @@ type Side = 'left' | 'right';
  * Samples input once per frame and hands it to `TimeMachine.frame()`.
  *
  * In an XR session (headset or the IWER emulator):
+ *  - lens hand: right by default, left when the settings switch says so (`Prefs.lensHand`);
  *  - lens direction: from the head to the lens hand's GRIP pose (where the hand or controller
  *    physically is), not its target ray (where it points);
  *  - push-through: hold a pinch, or the trigger, on the lens hand;
@@ -52,8 +53,12 @@ export class TimeLensSystem extends createSystem({}) {
   private rectHeight = 0;
   private rectStale = true;
 
-  bind(tm: TimeMachine | null): void {
+  /** Which hand carries the lens, read every frame so the settings switch applies at once. */
+  private lensHand: () => Side = () => TIME.lensHand;
+
+  bind(tm: TimeMachine | null, lensHand?: () => Side): void {
     this.tm = tm;
+    this.lensHand = lensHand ?? (() => TIME.lensHand);
   }
 
   init(): void {
@@ -206,7 +211,7 @@ export class TimeLensSystem extends createSystem({}) {
     const xr = this.input.xr;
     player.head.getWorldPosition(this.head);
     player.head.getWorldDirection(this.forward).negate(); // Object3D "direction" is +Z; view is -Z
-    let side: Side = TIME.lensHand;
+    let side: Side = this.lensHand();
     if (xr.getPrimaryInputSource(side) === undefined) {
       const other: Side = side === 'right' ? 'left' : 'right';
       if (xr.getPrimaryInputSource(other) !== undefined) side = other;

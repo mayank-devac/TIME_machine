@@ -112,5 +112,9 @@
       <span id="set-label-3d" class="label">3D buildings</span>
       <div id="set-switch-3d" class="switch"><div id="set-knob-3d" class="knob"></div></div>
     </div>
+    <div id="set-row-lefty" class="row" style="display: flex; width: 44;">
+      <span id="set-label-lefty" class="label">Left-hand lens</span>
+      <div id="set-switch-lefty" class="switch"><div id="set-knob-lefty" class="knob"></div></div>
+    </div>
   </div>
 </div>

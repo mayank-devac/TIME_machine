@@ -53,6 +53,7 @@ import {
   zoomAround,
   zoomToRail,
   panByPixels,
+  tableHeightFor,
 } from './geo.js';
 import { RedrawScheduler } from './redraw.js';
 
@@ -296,6 +297,24 @@ export class TableMap implements MapTable {
     placements.delete(TABLE_ID);
     this.root.position.set(0, config.map.tableHeightM, TABLE_Z);
     this.root.rotation.set(0, 0, 0);
+  }
+
+  /**
+   * Put the table in front of a viewer at `head` looking along `forward`, at a height that
+   * suits their eye level, so a seated user gets a lower table straight ahead of the chair.
+   * Forgets any drag. A hard snap, never animated.
+   */
+  placeForViewer(head: Readonly<Vector3>, forward: Readonly<Vector3>): void {
+    placements.delete(TABLE_ID);
+    const flat = Math.hypot(forward.x, forward.z);
+    const yaw = flat > 1e-3 ? Math.atan2(-forward.x, -forward.z) : 0;
+    const d = -TABLE_Z;
+    this.root.position.set(
+      head.x - Math.sin(yaw) * d,
+      tableHeightFor(head.y, config.map.tableHeightM),
+      head.z - Math.cos(yaw) * d,
+    );
+    this.root.rotation.set(0, yaw, 0);
   }
 
   /** Settings changed: base map, theme colours, 3D buildings. */

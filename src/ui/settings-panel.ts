@@ -1,8 +1,9 @@
 /**
- * The settings panel: three switches and nothing else. Folded to its header until opened.
+ * The settings panel: four switches and nothing else. Folded to its header until opened.
  *  - Satellite view: satellite imagery on the table map (off shows the themed map).
  *  - Dark mode: the colours of every UI surface, and the non-satellite base map.
  *  - 3D buildings: tilted table map with raised buildings.
+ *  - Lens in left hand: swaps the time lens and the wrist dial between the hands.
  * Each switch writes `ctx.prefs`; the map and the theme follow `prefs:changed`.
  */
 import type { Prefs } from '../contracts.js';
@@ -12,7 +13,7 @@ import { paintBox, paintIconButton, paintText } from './panel-style.js';
 
 interface Switch {
   /** Id suffix in `settings.uikitml`. */
-  key: 'satellite' | 'dark' | '3d';
+  key: 'satellite' | 'dark' | '3d' | 'lefty';
   on(p: Readonly<Prefs>): boolean;
   toggled(p: Readonly<Prefs>): Partial<Prefs>;
 }
@@ -21,6 +22,7 @@ export const SETTINGS_SWITCHES: readonly Switch[] = [
   { key: 'satellite', on: (p) => p.satellite, toggled: (p) => ({ satellite: !p.satellite }) },
   { key: 'dark', on: (p) => p.theme === 'dark', toggled: (p) => ({ theme: p.theme === 'dark' ? 'light' : 'dark' }) },
   { key: '3d', on: (p) => p.buildings3d, toggled: (p) => ({ buildings3d: !p.buildings3d }) },
+  { key: 'lefty', on: (p) => p.lensHand === 'left', toggled: (p) => ({ lensHand: p.lensHand === 'left' ? 'right' : 'left' }) },
 ];
 
 export function createSettingsPanel(host: Host): PanelModule {

@@ -97,7 +97,7 @@ export interface AppState {
   year: number | null;
 }
 
-/** The three switches on the settings panel. Owned by `PrefsStore` (`src/prefs.ts`). */
+/** The switches on the settings panel. Owned by `PrefsStore` (`src/prefs.ts`). */
 export interface Prefs {
   /** Satellite imagery on the table map. Off shows the map that matches `theme`. */
   satellite: boolean;
@@ -105,6 +105,27 @@ export interface Prefs {
   theme: 'dark' | 'light';
   /** Tilted table map with extruded buildings. */
   buildings3d: boolean;
+  /** Which hand carries the time lens; the other hand is the wrist dial. */
+  lensHand: 'left' | 'right';
+}
+
+/** The last street (and lens year) the user was in, saved across visits. */
+export interface SavedSession {
+  lat: number;
+  lng: number;
+  label?: string;
+  /** Lens year when the user left, or null when they were in the present. */
+  year: number | null;
+  /** Date.now() when it was saved. */
+  savedAt: number;
+}
+
+/** Remembers where the user was so a later visit can continue there. */
+export interface SessionAccess {
+  /** The saved street, or null when there is none. */
+  last(): Readonly<SavedSession> | null;
+  /** Go back to the saved street, and to the saved year once that street's years are known. */
+  resume(): void;
 }
 
 /** Read and change the settings. Changing one emits `prefs:changed`. */
@@ -341,6 +362,8 @@ export interface TrackContext {
   state: AppStateStore;
   /** User settings (satellite, theme, 3D buildings). */
   prefs: PrefsAccess;
+  /** Last street and year, for "continue where you left off". */
+  session: SessionAccess;
   /** Real or mock, depending on what `index.ts` wired. Code against the interface only. */
   services: Services;
 }

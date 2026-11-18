@@ -1,5 +1,5 @@
 /**
- * User settings (the three switches on the settings panel). Orchestrator-owned.
+ * User settings (the switches on the settings panel). Orchestrator-owned.
  * Saved in `localStorage`, announced on the bus as `prefs:changed`, and the theme switch is
  * applied to `theme.ts` here so no track has to remember to do it.
  */
@@ -11,7 +11,7 @@ export const PREFS_KEY = 'tm-prefs';
 const LEGACY_BASE_MAP_KEY = 'tm-base-map';
 const LEGACY_3D_KEY = 'tm-buildings-3d';
 
-export const DEFAULT_PREFS: Readonly<Prefs> = { satellite: true, theme: 'dark', buildings3d: false };
+export const DEFAULT_PREFS: Readonly<Prefs> = { satellite: true, theme: 'dark', buildings3d: false, lensHand: 'right' };
 
 export type BaseMapKind = 'satellite' | 'dark' | 'light';
 
@@ -41,6 +41,7 @@ export function loadPrefs(storage: StorageLike | null = browserStorage()): Prefs
       if (typeof p.satellite === 'boolean') prefs.satellite = p.satellite;
       if (p.theme === 'dark' || p.theme === 'light') prefs.theme = p.theme;
       if (typeof p.buildings3d === 'boolean') prefs.buildings3d = p.buildings3d;
+      if (p.lensHand === 'left' || p.lensHand === 'right') prefs.lensHand = p.lensHand;
       return prefs;
     }
     const kind = storage.getItem(LEGACY_BASE_MAP_KEY);
@@ -76,7 +77,8 @@ export class PrefsStore {
     if (
       next.satellite === this.prefs.satellite &&
       next.theme === this.prefs.theme &&
-      next.buildings3d === this.prefs.buildings3d
+      next.buildings3d === this.prefs.buildings3d &&
+      next.lensHand === this.prefs.lensHand
     ) {
       return;
     }

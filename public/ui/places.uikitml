@@ -82,6 +82,10 @@
     <div id="places-fold" class="fold"><svg id="places-fold-icon" class="icon"></svg></div>
   </div>
   <div id="places-content" class="content">
+    <div id="places-resume" class="row" style="width: 56;">
+      <span id="places-resume-name" class="label">Continue last street</span>
+      <span id="places-resume-year" class="small">NOW</span>
+    </div>
     <div id="place-row-0" class="row" style="width: 56;">
       <span id="place-name-0" class="label">Place</span>
       <span id="place-years-0" class="small">2016-2025</span>

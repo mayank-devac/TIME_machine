@@ -4,9 +4,8 @@
  * here. Everything below is UNTESTED on a headset.
  */
 export const TIME = {
-  /** Which hand carries the lens, and which one is the wrist dial. */
+  /** Default lens hand; the other one is the wrist dial. The user can swap them (`Prefs.lensHand`). */
   lensHand: 'right',
-  dialHand: 'left',
 
   /** Wrist twist needed for one year step, radians (about 25 degrees). */
   dialStepRad: (25 * Math.PI) / 180,

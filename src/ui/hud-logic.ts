@@ -2,7 +2,7 @@
  * Pure HUD logic (no Three.js, no DOM). Everything here is unit tested in hud-logic.test.ts.
  * All copy is plain ASCII: the UI font is not known to carry typographic glyphs.
  */
-import type { AppState, ArchivePhoto, LatLng, Mode, Pano } from '../contracts.js';
+import type { AppState, ArchivePhoto, LatLng, Mode, Pano, SavedSession } from '../contracts.js';
 import { yearOf } from '../contracts.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -153,11 +153,36 @@ export interface PlacesPage {
   pageText: string;
 }
 
-/** The places list shows in the room and in street; it needs a place to list, or a running lookup. */
-export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false): boolean =>
-  (mode === 'table' || mode === 'street') && (placeCount > 0 || loading);
+/**
+ * The places list shows in the room and in street; it needs a place to list, a running lookup,
+ * or (in the room) a saved street to continue.
+ */
+export const showPlacesPanel = (mode: Mode, placeCount: number, loading = false, canResume = false): boolean =>
+  (mode === 'table' || mode === 'street') && (placeCount > 0 || loading || (mode === 'table' && canResume));
 
-/** The settings switches (satellite, dark, 3D buildings) only shape the table map, so the
+export interface ResumeRow {
+  name: string;
+  detail: string;
+}
+
+/** Longest place name on the continue row before it is cut short. */
+const RESUME_NAME_MAX = 26;
+
+/**
+ * The "continue where you left off" row at the top of the places list. Only in the room
+ * (the table), and only when a street was saved. ASCII only.
+ */
+export function resumeRow(saved: Pick<SavedSession, 'label' | 'year'> | null, mode: Mode): ResumeRow | null {
+  if (!saved || mode !== 'table') return null;
+  const label = clean(saved.label);
+  const place = label.length > RESUME_NAME_MAX ? `${label.slice(0, RESUME_NAME_MAX - 3)}...` : label;
+  return {
+    name: place ? `Continue: ${place}` : 'Continue last street',
+    detail: saved.year === null ? 'NOW' : String(saved.year),
+  };
+}
+
+/** The settings switches (map look, theme, lens hand) are set up before visiting a street, so the
  * panel shows at the table alone — not in street or portal. */
 export const showSettingsPanel = (mode: Mode): boolean => mode === 'table';
 
@@ -368,9 +393,17 @@ export interface SlotSpec {
 }
 
 /**
+ * Furthest any panel centre opens from straight ahead, degrees. A seated user should see
+ * every panel without turning in the chair: a Quest shows about 45-49 degrees per side, and
+ * a 60 cm panel 1.5 m away spans about 12 degrees either side of its centre.
+ */
+export const MAX_SLOT_DEG = 30;
+
+/**
  * Where each panel opens. The centre of the view stays clear for the map table and the
- * street; the core controls (street bar) sit just below it, lists to the sides, and the rare
- * settings panel furthest out. Every panel except the status toast can be dragged from here.
+ * street; the core controls (street bar) sit just below it and the lists to the sides, all
+ * within `MAX_SLOT_DEG` of forward. Settings stacks above search on the right (both are
+ * table-mode only and start folded). Every panel except the status toast can be dragged.
  */
 export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
   status: { leftDeg: 0, distance: 1.5, dy: -0.2 },
@@ -378,14 +411,15 @@ export const SLOTS: Readonly<Record<HudSlot, SlotSpec>> = {
   bar: { leftDeg: 0, distance: 1.3, dy: -0.47 },
   credits: { leftDeg: 0, distance: 1.5, dy: -0.92 },
   // Places list: beside the table in the room (see STREET_PLACES_SLOT when a pano is live).
-  places: { leftDeg: 42, distance: 1.3, dy: -0.05 },
+  places: { leftDeg: 30, distance: 1.5, dy: -0.05 },
   // Search (type or speak a place), beside the table on the right. Table mode only.
-  search: { leftDeg: -38, distance: 1.4, dy: -0.05 },
-  settings: { leftDeg: -66, distance: 1.3, dy: -0.1 },
+  search: { leftDeg: -30, distance: 1.5, dy: -0.12 },
+  // Settings sits above search, a little above the eye line.
+  settings: { leftDeg: -30, distance: 1.5, dy: 0.3 },
 };
 
-/** Street moves the places panel further out and up to the eye line, clear of the street bar. */
-export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 52, distance: 1.5, dy: 0 };
+/** Street lifts the places panel to the eye line, clear of the street bar. */
+export const STREET_PLACES_SLOT: SlotSpec = { leftDeg: 30, distance: 1.5, dy: 0 };
 
 /** Street omits places that are basically the spot the player already stands on. */
 export const STREET_PLACE_MIN_OFFSET_M = 15;

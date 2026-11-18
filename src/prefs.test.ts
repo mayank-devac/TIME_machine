@@ -22,7 +22,7 @@ describe('prefs', () => {
 
   it('reads the saved settings and ignores bad fields', () => {
     const s = storage({ [PREFS_KEY]: JSON.stringify({ satellite: false, theme: 'purple', buildings3d: true }) });
-    expect(loadPrefs(s)).toEqual({ satellite: false, theme: 'dark', buildings3d: true });
+    expect(loadPrefs(s)).toEqual({ satellite: false, theme: 'dark', buildings3d: true, lensHand: 'right' });
     expect(loadPrefs(storage({ [PREFS_KEY]: '{not json' }))).toEqual(DEFAULT_PREFS);
   });
 
@@ -31,8 +31,21 @@ describe('prefs', () => {
       satellite: false,
       theme: 'light',
       buildings3d: true,
+      lensHand: 'right',
     });
-    expect(loadPrefs(storage({ 'tm-base-map': 'dark' }))).toEqual({ satellite: false, theme: 'dark', buildings3d: false });
+    expect(loadPrefs(storage({ 'tm-base-map': 'dark' }))).toEqual({ satellite: false, theme: 'dark', buildings3d: false, lensHand: 'right' });
+  });
+
+  it('reads and saves the lens hand, ignoring bad values', () => {
+    expect(loadPrefs(storage({ [PREFS_KEY]: JSON.stringify({ lensHand: 'left' }) })).lensHand).toBe('left');
+    expect(loadPrefs(storage({ [PREFS_KEY]: JSON.stringify({ lensHand: 'up' }) })).lensHand).toBe('right');
+    const bus = new EventBus();
+    const s = storage();
+    const fn = vi.fn();
+    bus.on('prefs:changed', fn);
+    new PrefsStore(bus, s).set({ lensHand: 'left' });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(s.data.get(PREFS_KEY)!).lensHand).toBe('left');
   });
 
   it('satellite wins over the theme for the base map', () => {
@@ -51,7 +64,7 @@ describe('prefs', () => {
     store.set({ theme: 'light' });
     expect(fn).toHaveBeenCalledTimes(1);
     expect(currentTheme()).toBe('light');
-    expect(JSON.parse(s.data.get(PREFS_KEY)!)).toEqual({ satellite: true, theme: 'light', buildings3d: false });
+    expect(JSON.parse(s.data.get(PREFS_KEY)!)).toEqual({ satellite: true, theme: 'light', buildings3d: false, lensHand: 'right' });
     expect(new PrefsStore(new EventBus(), s).get().theme).toBe('light');
   });
 });

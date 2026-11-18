@@ -13,6 +13,7 @@ import { DragSystem } from './drag.js';
 import { wireFlow } from './flow.js';
 import { HoverSystem } from './hover.js';
 import { PrefsStore } from './prefs.js';
+import { SessionStore } from './session.js';
 
 // The XR emulator asks for pointer lock on click; the browser refuses it for a moment after the
 // user pressed Esc. That refusal is harmless, so keep it out of the console as an unhandled error.
@@ -31,7 +32,9 @@ World.create(
   const stage = createPanoStage(world, bus, source);
   // Loads the saved settings and applies the theme before any surface is built.
   const prefs = new PrefsStore(bus);
-  const ctx: TrackContext = { world, bus, state, prefs, services: { source, stage } };
+  // Remembers the last street and year so a later visit can continue there.
+  const session = new SessionStore(bus, state);
+  const ctx: TrackContext = { world, bus, state, prefs, session, services: { source, stage } };
 
   world.registerSystem(HoverSystem);
   world.registerSystem(DragSystem);

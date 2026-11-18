@@ -10,6 +10,7 @@ import {
   STREET_PLACE_MIN_OFFSET_M,
   placesPage,
   placesTitle,
+  resumeRow,
   showPager,
   showPlacesPanel,
   startsCollapsed,
@@ -27,7 +28,7 @@ export interface PlacesPanel extends PanelModule {
 }
 
 export function createPlacesPanel(host: Host): PlacesPanel {
-  const { bus, state, services } = host.ctx;
+  const { bus, state, services, session } = host.ctx;
   let places: NearbyPlace[] = [];
   let centre: LatLng | null = null;
   let zoom: number | null = null;
@@ -58,7 +59,8 @@ export function createPlacesPanel(host: Host): PlacesPanel {
       dotFrame = 1;
     }
     const mode = state.get().mode;
-    const show = showPlacesPanel(mode, places.length, loading);
+    const resume = resumeRow(session.last(), mode);
+    const show = showPlacesPanel(mode, places.length, loading, resume !== null);
     host.setVisible('places', show);
     if (!show) return;
 
@@ -77,6 +79,19 @@ export function createPlacesPanel(host: Host): PlacesPanel {
       'ghost',
     );
     host.el('places', 'places-content')?.setProperties({ display: isFolded ? 'none' : 'flex' });
+
+    // "Continue where you left off": the saved street, at the top of the list in the room.
+    const resumeBox = host.el('places', 'places-resume');
+    resumeBox?.setProperties({ display: resume ? 'flex' : 'none' });
+    if (resume) {
+      const name = host.text('places', 'places-resume-name');
+      const year = host.text('places', 'places-resume-year');
+      name?.setProperties({ text: resume.name });
+      year?.setProperties({ text: resume.detail });
+      paintBox(resumeBox, 'primary');
+      paintText(name, 'onAccent');
+      paintText(year, 'onAccent');
+    }
 
     for (let i = 0; i < PLACES_PER_PAGE; i++) {
       const row = view.rows[i];
@@ -101,7 +116,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
     paintIconButton(host.el('places', 'places-next'), host.el('places', 'places-next-icon'), 'chevron-right', 'ghost');
 
     // The grip sits above the panel, so it has to move whenever the panel's height changes.
-    const next = `${isFolded}|${view.rows.length}|${pager}`;
+    const next = `${isFolded}|${view.rows.length}|${pager}|${resume !== null}`;
     if (next !== shape) {
       shape = next;
       host.resized('places');
@@ -167,6 +182,7 @@ export function createPlacesPanel(host: Host): PlacesPanel {
       if (place) bus.emit('spot:selected', { lat: place.lat, lng: place.lng, label: row?.name });
     });
   }
+  host.control(host.el('places', 'places-resume'), 'row', () => session.resume());
   const turnPage = (delta: number): void => {
     pageIndex = (view.page + delta + view.pageCount) % view.pageCount;
     refresh();

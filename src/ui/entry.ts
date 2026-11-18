@@ -374,11 +374,29 @@ export const createTrack: TrackFactory = async (ctx) => {
     resetPlacements();
     scheduleRecentre(RECENTRE_AFTER_XR_MS);
   };
-  xr.addEventListener('sessionstart', onSessionChange);
-  xr.addEventListener('sessionend', onSessionChange);
+  // The headset's own recentre (holding the Meta button) resets the reference space: follow it,
+  // so a seated user who turned their chair gets every panel back in front of them.
+  let space: XRReferenceSpace | null = null;
+  const onReset = (): void => {
+    resetPlacements();
+    scheduleRecentre(0);
+  };
+  const onSessionStart = (): void => {
+    onSessionChange();
+    space = xr.getReferenceSpace();
+    space?.addEventListener('reset', onReset);
+  };
+  const onSessionEnd = (): void => {
+    space?.removeEventListener('reset', onReset);
+    space = null;
+    onSessionChange();
+  };
+  xr.addEventListener('sessionstart', onSessionStart);
+  xr.addEventListener('sessionend', onSessionEnd);
   offs.push(
-    () => xr.removeEventListener('sessionstart', onSessionChange),
-    () => xr.removeEventListener('sessionend', onSessionChange),
+    () => xr.removeEventListener('sessionstart', onSessionStart),
+    () => xr.removeEventListener('sessionend', onSessionEnd),
+    () => space?.removeEventListener('reset', onReset),
   );
   const onKey = (event: KeyboardEvent): void => {
     if (event.code !== 'KeyC' || event.repeat || event.ctrlKey || event.metaKey) return;
