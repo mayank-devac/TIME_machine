@@ -43,8 +43,10 @@ interface Panel {
   node: Object3D;
 }
 
-/** UIKit lays a panel out a few frames after a change; measure for the grip after this. */
-const GRIP_SETTLE_MS = 150;
+/** How fast the grip glides to a panel's new top edge: 1/e of the gap closes in this many seconds. */
+const GRIP_EASE_S = 0.06;
+/** Below this gap, metres, the grip lands exactly on its target. */
+const GRIP_SNAP_M = 0.0005;
 /** How long the grip stays visible after the pointer leaves its panel. */
 const GRIP_HIDE_DELAY_MS = 1500;
 /** Gap between a panel's top edge and its grip, metres. */
@@ -62,12 +64,12 @@ const SPINNER_PILL = 12;
  * the UI track.
  */
 class PanelFaceSystem extends createSystem({}) {
-  face: (() => void) | null = null;
+  face: ((delta: number) => void) | null = null;
   spinner: Mesh | null = null;
 
   update(delta: number): void {
     if (this.spinner?.visible) this.spinner.rotation.z -= delta * SPINNER_SPEED;
-    this.face?.();
+    this.face?.(delta);
   }
 }
 
@@ -75,7 +77,6 @@ export const createTrack: TrackFactory = async (ctx) => {
   const { world, bus, state } = ctx;
   const offs: Unsubscribe[] = [];
   const panels = new Map<HudSlot, Panel>();
-  const gripTimers = new Map<HudSlot, ReturnType<typeof setTimeout>>();
   const busy = new BusyScopes();
   let yearsKnown = false;
   let photos: ArchivePhoto[] = [];
@@ -169,15 +170,8 @@ export const createTrack: TrackFactory = async (ctx) => {
       offs.push(() => el.removeEventListener('click', onClick), attachHover(el, variant));
     },
     resized(slot) {
-      const pending = gripTimers.get(slot);
-      if (pending !== undefined) clearTimeout(pending);
-      gripTimers.set(
-        slot,
-        setTimeout(() => {
-          gripTimers.delete(slot);
-          placeGrip(slot);
-        }, GRIP_SETTLE_MS),
-      );
+      // The grip follows the panel's layout every frame (`followGrip`); nothing to schedule.
+      placeGrip(slot, 0);
     },
     get disposed() {
       return disposed;
@@ -188,16 +182,47 @@ export const createTrack: TrackFactory = async (ctx) => {
    * Put a panel's grip just above its top edge. UIKit panels are instanced meshes with empty
    * geometry bounds, so a `Box3` walk measures nothing; the top edge comes from UIKit's own
    * laid-out height instead (the root element is centred on the panel origin, 1 px = 1 cm).
+   *
+   * Runs every frame for visible panels, so the grip tracks the panel while a tab opens instead
+   * of waiting for the layout to finish and then jumping. A visible grip glides (`delta` > 0);
+   * a hidden one, or `delta` 0, lands at once.
    */
-  function placeGrip(slot: HudSlot): void {
+  type Sized = El & { size?: { peek(): [number, number] | undefined } };
+  const gripRoots = new Map<HudSlot, Sized | null>();
+  function placeGrip(slot: HudSlot, delta: number): void {
     const panel = panels.get(slot);
-    const root = host.el(slot, PANELS[slot].root) as (El & { size?: { peek(): [number, number] | undefined } }) | null;
-    if (disposed || !panel?.rig || !root) return;
+    if (disposed || !panel?.rig) return;
+    let root = gripRoots.get(slot);
+    if (!root) {
+      root = host.el(slot, PANELS[slot].root) as Sized | null;
+      gripRoots.set(slot, root);
+      if (!root) return;
+    }
     const heightPx = root.size?.peek()?.[1] ?? Number.NaN;
     // Before the first layout the size is unknown; keep the grip close in that case.
     const top = Number.isFinite(heightPx) && heightPx > 0 ? (heightPx / 2) * 0.01 : 0.06;
-    panel.rig.placeGrip(0, top + GRIP_GAP_M, 0);
+    const target = top + GRIP_GAP_M;
+    const grip = panel.rig.grip.position;
+    const gap = target - grip.y;
+    if (gap === 0) return;
+    const glide = delta > 0 && panel.rig.grip.visible && Math.abs(gap) > GRIP_SNAP_M;
+    const y = glide ? grip.y + gap * (1 - Math.exp(-delta / GRIP_EASE_S)) : target;
+    panel.rig.placeGrip(0, y, 0);
   }
+
+  /**
+   * Where each panel sat in table mode when the viewer last left it. The map table is placed
+   * only on `viewer:recentred`, not per mode change, so re-laying the panels around wherever
+   * the head turned in the street would scatter them away from the table. Cleared with drags.
+   */
+  const tableLayout = new Map<HudSlot, Vector3>();
+  const saveTableLayout = (): void => {
+    for (const [slot, panel] of panels) {
+      const saved = tableLayout.get(slot);
+      if (saved) saved.copy(panel.node.position);
+      else tableLayout.set(slot, panel.node.position.clone());
+    }
+  };
 
   /**
    * Hard snap of every panel to the head's current position and heading. Never animated.
@@ -210,6 +235,14 @@ export const createTrack: TrackFactory = async (ctx) => {
     const yaw = yawFromForward(fwd.x, fwd.z);
     const mode = state.get().mode;
     for (const [slot, panel] of panels) {
+      // Back at the map: the table never moved, so neither do its panels.
+      const saved = mode === 'table' ? tableLayout.get(slot) : undefined;
+      if (saved) {
+        panel.node.position.copy(saved);
+        panel.node.lookAt(head);
+        host.resized(slot);
+        continue;
+      }
       if (panel.rig && placements.has(panel.rig.id)) continue;
       positionAround(head, yaw, slotSpec(slot, mode), pos);
       panel.node.position.set(pos.x, pos.y, pos.z);
@@ -224,12 +257,13 @@ export const createTrack: TrackFactory = async (ctx) => {
    * left it. Runs every frame via `PanelFaceSystem`, so a panel never sits edge-on or
    * backwards to whoever looks at it.
    */
-  const faceHead = (): void => {
+  const faceHead = (delta: number): void => {
     if (disposed) return;
     readHead(world, head);
-    for (const panel of panels.values()) {
+    for (const [slot, panel] of panels) {
       if (!panel.node.visible) continue;
       panel.node.lookAt(head);
+      if (panel.rig) placeGrip(slot, delta);
     }
   };
 
@@ -338,13 +372,15 @@ export const createTrack: TrackFactory = async (ctx) => {
       photos = visible;
       refreshCredits();
     }),
-    bus.on('mode:changed', () => {
+    bus.on('mode:changed', ({ previous }) => {
+      if (previous === 'table') saveTableLayout();
       refreshHud();
       recentre();
     }),
     // A new frame of reference (session start or end, headset recentre, C key): drags are void.
     bus.on('viewer:recentred', () => {
       resetPlacements();
+      tableLayout.clear();
       recentre();
     }),
     bus.on('loading', ({ scope, busy: isBusy }) => {
@@ -371,8 +407,7 @@ export const createTrack: TrackFactory = async (ctx) => {
       toasts.dispose();
       spinnerGeometry.dispose();
       spinnerMaterial.dispose();
-      for (const t of gripTimers.values()) clearTimeout(t);
-      gripTimers.clear();
+      gripRoots.clear();
       for (const { entity, asset, rig } of panels.values()) {
         asset.dispose();
         entity.dispose();
